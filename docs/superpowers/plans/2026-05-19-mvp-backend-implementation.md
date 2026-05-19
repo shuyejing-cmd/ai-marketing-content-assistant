@@ -10,6 +10,29 @@
 
 ---
 
+## Target Hybrid Backend Architecture
+
+The backend target architecture is:
+
+```text
+NestJS main backend
+  owns users, merchants, templates, assets, points, orders, tasks, results, and feedback
+
+AI Provider Adapter
+  owns the unified model-call protocol
+
+BullMQ + Redis
+  own asynchronous task dispatch, cache, rate limits, and fast task status access
+
+FastAPI AI execution service
+  can be added later as a pluggable execution service for AI agents, image processing, multimodal workflows, and video workflows
+
+PostgreSQL
+  remains the source of truth for business data
+```
+
+FastAPI is intentionally not part of the MVP backend build. It should be introduced after the local H5 flow and NestJS task workflow are validated. When introduced, FastAPI should not own user, order, points, or task state. NestJS should call it through the AI Provider Adapter and keep business state in PostgreSQL.
+
 ## Scope Check
 
 This plan covers the backend MVP only. It does not build the H5 frontend, the manual image editor, direct publishing integrations, complete video generation, or real model-provider integrations. The backend will expose stable API contracts that the H5 app can consume.

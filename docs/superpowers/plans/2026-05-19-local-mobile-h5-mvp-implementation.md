@@ -4,7 +4,7 @@
 
 **Goal:** Build a local mobile-first H5 prototype that lets one user open the product on a phone browser, choose the Image entrance, fill quick options, upload an optional product image, generate mock image marketing packages, and try regenerate / secondary modification.
 
-**Architecture:** Use a single Next.js app for the first local prototype. The frontend pages, reusable UI components, mock API routes, and mock generation logic live in clearly separated folders so the mock backend can later be replaced by the NestJS backend without rewriting the UI.
+**Architecture:** Use a single Next.js app for the first local prototype. The frontend pages, reusable UI components, mock API routes, and mock generation logic live in clearly separated folders so the mock backend can later be replaced by the NestJS main backend without rewriting the UI. Future FastAPI AI execution services should stay behind the backend AI Provider Adapter and should not change the H5 page contracts.
 
 **Tech Stack:** Next.js App Router, React, TypeScript, Tailwind CSS, local mock API routes, browser localStorage for lightweight history, Vitest for pure logic tests, Playwright for mobile viewport smoke testing.
 
