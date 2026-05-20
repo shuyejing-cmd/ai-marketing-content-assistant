@@ -6,6 +6,8 @@ import type { GenerationResult } from '@/features/generation/generation-types';
 import { downloadNodeAsPng } from '@/lib/download';
 import { PosterPreview } from './PosterPreview';
 
+type CopyState = 'idle' | 'copied' | 'failed';
+
 type ResultCardProps = {
   result: GenerationResult;
   onRegenerate: () => void;
@@ -14,12 +16,12 @@ type ResultCardProps = {
 
 export function ResultCard({ result, onRegenerate, onModify }: ResultCardProps) {
   const posterRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<CopyState>('idle');
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(result.publishingCopy);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+    const copied = await copyText(result.publishingCopy);
+    setCopyState(copied ? 'copied' : 'failed');
+    window.setTimeout(() => setCopyState('idle'), 1600);
   }
 
   async function handleDownload() {
@@ -47,7 +49,7 @@ export function ResultCard({ result, onRegenerate, onModify }: ResultCardProps) 
           className="flex h-10 items-center justify-center gap-1 rounded-lg border border-line text-[13px] text-ink"
         >
           <Copy size={15} aria-hidden="true" />
-          {copied ? '已复制' : '复制文案'}
+          {copyState === 'copied' ? '已复制' : '复制文案'}
         </button>
         <button
           type="button"
@@ -74,6 +76,39 @@ export function ResultCard({ result, onRegenerate, onModify }: ResultCardProps) 
           二次修改
         </button>
       </div>
+
+      {copyState === 'failed' ? (
+        <p className="mt-2 text-[12px] leading-5 text-warm">复制失败，请长按文案手动复制</p>
+      ) : null}
     </article>
   );
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return fallbackCopyText(text);
+  }
+}
+
+function fallbackCopyText(text: string) {
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', '');
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-9999px';
+  textArea.style.top = '0';
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    document.body.removeChild(textArea);
+  }
 }

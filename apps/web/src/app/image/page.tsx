@@ -102,6 +102,11 @@ export default function ImagePage() {
     }
   }
 
+  function cancelModification() {
+    setModifyingResultId(null);
+    setRequestText('');
+  }
+
   return (
     <AppShell>
       <div className="flex min-h-dvh flex-col pb-4">
@@ -167,11 +172,20 @@ export default function ImagePage() {
 
         <footer className="sticky bottom-0 -mx-4 bg-canvas px-4 pb-2 pt-3">
           {modifyingResultId ? (
-            <p className="pb-2 text-[13px] text-accent">
-              正在二次修改当前方案，输入你想改的地方。
-            </p>
+            <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-accent bg-white px-3 py-2">
+              <p className="text-[13px] leading-5 text-accent">
+                正在二次修改当前方案，输入你想改的地方。
+              </p>
+              <button
+                type="button"
+                onClick={cancelModification}
+                className="shrink-0 rounded-full border border-accent px-3 py-1 text-[12px] text-accent"
+              >
+                取消二次修改
+              </button>
+            </div>
           ) : null}
-          <QuickActionBar onOpen={setActiveSheet} />
+          <QuickActionBar onOpen={setActiveSheet} uploadedImageDataUrl={uploadedImageDataUrl} />
           <ChatComposer
             value={requestText}
             loading={loading}

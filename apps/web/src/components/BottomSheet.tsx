@@ -23,10 +23,21 @@ export function BottomSheet({ title, open, onClose, children }: BottomSheetProps
             className="grid h-9 w-9 place-items-center rounded-full border border-line"
             aria-label="关闭"
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
-        {children}
+
+        <div className="pb-16">{children}</div>
+
+        <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-line bg-surface p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-11 w-full rounded-lg bg-accent text-[15px] font-semibold text-white"
+          >
+            完成
+          </button>
+        </div>
       </section>
     </div>
   );
