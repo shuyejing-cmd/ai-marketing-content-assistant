@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { ActivityInfoForm } from '@/components/ActivityInfoForm';
 import { AppShell } from '@/components/AppShell';
@@ -28,6 +28,7 @@ import type {
   MarketingScene,
   StyleTemplate,
 } from '@/features/generation/generation-types';
+import { loadTaskHistory, saveTaskToHistory } from '@/features/generation/local-history';
 
 type SheetKey = 'upload' | 'channel' | 'scene' | 'style' | 'info' | null;
 
@@ -40,9 +41,19 @@ export default function ImagePage() {
   const [style, setStyle] = useState<StyleTemplate>('young_trendy');
   const [campaignInfo, setCampaignInfo] = useState<CampaignInfo>({});
   const [task, setTask] = useState<GenerationTask | null>(null);
+  const [history, setHistory] = useState<GenerationTask[]>([]);
   const [modifyingResultId, setModifyingResultId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHistory(loadTaskHistory());
+  }, []);
+
+  function persistTask(nextTask: GenerationTask) {
+    saveTaskToHistory(nextTask);
+    setHistory(loadTaskHistory());
+  }
 
   async function handleSubmit() {
     setLoading(true);
@@ -51,6 +62,7 @@ export default function ImagePage() {
       if (task && modifyingResultId) {
         const modifiedTask = await modifyTask(task.id, modifyingResultId, requestText);
         setTask(modifiedTask);
+        persistTask(modifiedTask);
         setModifyingResultId(null);
         setRequestText('');
         return;
@@ -65,6 +77,7 @@ export default function ImagePage() {
         campaignInfo,
       });
       setTask(nextTask);
+      persistTask(nextTask);
       setRequestText('');
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : '生成失败');
@@ -80,6 +93,7 @@ export default function ImagePage() {
     try {
       const nextTask = await regenerateTask(task.id);
       setTask(nextTask);
+      persistTask(nextTask);
       setModifyingResultId(null);
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : '重新生成失败');
@@ -114,6 +128,24 @@ export default function ImagePage() {
 
           {error ? (
             <div className="rounded-lg border border-warm bg-white p-3 text-[14px] text-warm">{error}</div>
+          ) : null}
+
+          {history.length > 0 && !task ? (
+            <section className="rounded-lg border border-line bg-surface p-3">
+              <p className="text-[15px] font-semibold text-ink">最近生成</p>
+              <div className="mt-2 grid gap-2">
+                {history.slice(0, 3).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setTask(item)}
+                    className="rounded-lg bg-canvas p-3 text-left text-[14px] leading-5 text-ink"
+                  >
+                    {item.request.requestText}
+                  </button>
+                ))}
+              </div>
+            </section>
           ) : null}
 
           {task ? (
