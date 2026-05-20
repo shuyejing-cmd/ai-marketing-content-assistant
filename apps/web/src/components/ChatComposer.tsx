@@ -15,6 +15,7 @@ export function ChatComposer({ value, loading, onChange, onSubmit }: ChatCompose
       <textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onInput={(event) => onChange(event.currentTarget.value)}
         rows={1}
         placeholder="描述你想生成的营销图片..."
         className="max-h-28 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-[15px] outline-none"

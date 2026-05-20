@@ -10,12 +10,17 @@ import { ChatComposer } from '@/components/ChatComposer';
 import { ImageUploader } from '@/components/ImageUploader';
 import { OptionPicker } from '@/components/OptionPicker';
 import { QuickActionBar } from '@/components/QuickActionBar';
+import { ResultCard } from '@/components/ResultCard';
 import {
   channelOptions,
   sceneOptions,
   styleOptions,
 } from '@/features/generation/generation-options';
-import { createGenerationTask } from '@/features/generation/generation-client';
+import {
+  createGenerationTask,
+  modifyTask,
+  regenerateTask,
+} from '@/features/generation/generation-client';
 import type {
   CampaignInfo,
   Channel,
@@ -35,6 +40,7 @@ export default function ImagePage() {
   const [style, setStyle] = useState<StyleTemplate>('young_trendy');
   const [campaignInfo, setCampaignInfo] = useState<CampaignInfo>({});
   const [task, setTask] = useState<GenerationTask | null>(null);
+  const [modifyingResultId, setModifyingResultId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,6 +48,14 @@ export default function ImagePage() {
     setLoading(true);
     setError(null);
     try {
+      if (task && modifyingResultId) {
+        const modifiedTask = await modifyTask(task.id, modifyingResultId, requestText);
+        setTask(modifiedTask);
+        setModifyingResultId(null);
+        setRequestText('');
+        return;
+      }
+
       const nextTask = await createGenerationTask({
         requestText,
         uploadedImageDataUrl,
@@ -54,6 +68,21 @@ export default function ImagePage() {
       setRequestText('');
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : '生成失败');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRegenerate() {
+    if (!task) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const nextTask = await regenerateTask(task.id);
+      setTask(nextTask);
+      setModifyingResultId(null);
+    } catch (generationError) {
+      setError(generationError instanceof Error ? generationError.message : '重新生成失败');
     } finally {
       setLoading(false);
     }
@@ -88,20 +117,28 @@ export default function ImagePage() {
           ) : null}
 
           {task ? (
-            <div className="rounded-lg border border-line bg-surface p-3">
-              <p className="text-[15px] font-semibold text-ink">已生成 {task.results.length} 套方案</p>
-              <div className="mt-2 grid gap-2">
-                {task.results.map((result) => (
-                  <div key={result.id} className="rounded-lg bg-canvas p-3 text-[14px] text-ink">
-                    {result.title}
-                  </div>
-                ))}
-              </div>
+            <div className="grid gap-3">
+              {task.results.map((result) => (
+                <ResultCard
+                  key={result.id}
+                  result={result}
+                  onRegenerate={handleRegenerate}
+                  onModify={(resultId) => {
+                    setModifyingResultId(resultId);
+                    setRequestText('');
+                  }}
+                />
+              ))}
             </div>
           ) : null}
         </section>
 
         <footer className="sticky bottom-0 -mx-4 bg-canvas px-4 pb-2 pt-3">
+          {modifyingResultId ? (
+            <p className="pb-2 text-[13px] text-accent">
+              正在二次修改当前方案，输入你想改的地方。
+            </p>
+          ) : null}
           <QuickActionBar onOpen={setActiveSheet} />
           <ChatComposer
             value={requestText}
