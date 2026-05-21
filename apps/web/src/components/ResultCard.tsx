@@ -1,12 +1,13 @@
 'use client';
 
 import { Copy, Download, RotateCcw, Wand2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { GenerationResult } from '@/features/generation/generation-types';
-import { downloadNodeAsPng } from '@/lib/download';
+import { downloadResultAsPng } from '@/lib/download';
 import { PosterPreview } from './PosterPreview';
 
 type CopyState = 'idle' | 'copied' | 'failed';
+type DownloadState = 'idle' | 'downloading' | 'failed';
 
 type ResultCardProps = {
   result: GenerationResult;
@@ -15,8 +16,8 @@ type ResultCardProps = {
 };
 
 export function ResultCard({ result, onRegenerate, onModify }: ResultCardProps) {
-  const posterRef = useRef<HTMLDivElement>(null);
   const [copyState, setCopyState] = useState<CopyState>('idle');
+  const [downloadState, setDownloadState] = useState<DownloadState>('idle');
 
   async function handleCopy() {
     const copied = await copyText(result.publishingCopy);
@@ -25,15 +26,18 @@ export function ResultCard({ result, onRegenerate, onModify }: ResultCardProps) 
   }
 
   async function handleDownload() {
-    if (!posterRef.current) return;
-    await downloadNodeAsPng(posterRef.current, `${result.id}.png`);
+    setDownloadState('downloading');
+    try {
+      await downloadResultAsPng(result, `${result.id}.png`);
+      setDownloadState('idle');
+    } catch {
+      setDownloadState('failed');
+    }
   }
 
   return (
     <article className="rounded-lg border border-line bg-surface p-3 shadow-soft">
-      <div ref={posterRef}>
-        <PosterPreview result={result} />
-      </div>
+      <PosterPreview result={result} />
 
       <div className="mt-3">
         <p className="text-[17px] font-semibold leading-6 text-ink">{result.title}</p>
@@ -54,10 +58,11 @@ export function ResultCard({ result, onRegenerate, onModify }: ResultCardProps) 
         <button
           type="button"
           onClick={handleDownload}
-          className="flex h-10 items-center justify-center gap-1 rounded-lg border border-line text-[13px] text-ink"
+          disabled={downloadState === 'downloading'}
+          className="flex h-10 items-center justify-center gap-1 rounded-lg border border-line text-[13px] text-ink disabled:text-muted"
         >
           <Download size={15} aria-hidden="true" />
-          下载图片
+          {downloadState === 'downloading' ? '正在下载' : '下载图片'}
         </button>
         <button
           type="button"
@@ -79,6 +84,9 @@ export function ResultCard({ result, onRegenerate, onModify }: ResultCardProps) 
 
       {copyState === 'failed' ? (
         <p className="mt-2 text-[12px] leading-5 text-warm">复制失败，请长按文案手动复制</p>
+      ) : null}
+      {downloadState === 'failed' ? (
+        <p className="mt-2 text-[12px] leading-5 text-warm">下载失败，请稍后重试</p>
       ) : null}
     </article>
   );

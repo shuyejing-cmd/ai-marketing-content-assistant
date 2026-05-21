@@ -1,11 +1,15 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const tinyPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
   'base64',
 );
 
-async function generateMarketingResults(page: import('@playwright/test').Page) {
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.clear());
+});
+
+async function generateMarketingResults(page: Page) {
   await page.goto('/image');
   await page
     .getByPlaceholder('描述你想生成的营销图片...')
@@ -66,4 +70,38 @@ test('secondary modification can be cancelled and copy gives feedback', async ({
 
   await page.getByRole('button', { name: /复制文案/ }).first().click();
   await expect(page.getByText(/已复制|复制失败，请长按文案手动复制/)).toBeVisible();
+});
+
+test('image page restores the latest session after leaving and entering again', async ({ page }) => {
+  await generateMarketingResults(page);
+
+  await page.getByRole('link').first().click();
+  await page.getByRole('link', { name: /图片/ }).click();
+
+  await expect(page.getByRole('button', { name: /复制文案/ }).first()).toBeVisible();
+});
+
+test('session menu can create a new session and restore an old one', async ({ page }) => {
+  await generateMarketingResults(page);
+
+  await page.getByRole('button', { name: '打开会话菜单' }).click();
+  await expect(page.getByText('历史会话记录')).toBeVisible();
+  await page.getByRole('button', { name: '新建聊天会话' }).click();
+  await expect(page.getByRole('button', { name: /复制文案/ }).first()).toBeHidden();
+
+  await page.getByRole('button', { name: '打开会话菜单' }).click();
+  await page.getByRole('button', { name: /给新品奶茶做/ }).click();
+
+  await expect(page.getByRole('button', { name: /复制文案/ }).first()).toBeVisible();
+});
+
+test('poster download uses a stable browser download instead of showing the error overlay', async ({ page }) => {
+  await generateMarketingResults(page);
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: /下载图片/ }).first().click();
+  const download = await downloadPromise;
+
+  expect(download.suggestedFilename()).toMatch(/\.png$/);
+  await expect(page.getByText(/Failed to read|Failed to fetch/)).toBeHidden();
 });

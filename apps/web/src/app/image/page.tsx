@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Menu } from 'lucide-react';
 import { ActivityInfoForm } from '@/components/ActivityInfoForm';
 import { AppShell } from '@/components/AppShell';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -28,31 +28,82 @@ import type {
   MarketingScene,
   StyleTemplate,
 } from '@/features/generation/generation-types';
-import { loadTaskHistory, saveTaskToHistory } from '@/features/generation/local-history';
+import {
+  createEmptySession,
+  getActiveTask,
+  getCurrentSessionId,
+  loadSessions,
+  saveTaskToCurrentSession,
+  setCurrentSessionId,
+  type GenerationSession,
+} from '@/features/generation/local-sessions';
 
-type SheetKey = 'upload' | 'channel' | 'scene' | 'style' | 'info' | null;
+type SheetKey = 'upload' | 'channel' | 'scene' | 'style' | 'info' | 'menu' | null;
+
+const defaultChannels: Channel[] = ['wechat'];
+const defaultScene: MarketingScene = 'new_product';
+const defaultStyle: StyleTemplate = 'young_trendy';
 
 export default function ImagePage() {
   const [activeSheet, setActiveSheet] = useState<SheetKey>(null);
   const [requestText, setRequestText] = useState('');
   const [uploadedImageDataUrl, setUploadedImageDataUrl] = useState<string | undefined>();
-  const [channels, setChannels] = useState<Channel[]>(['wechat']);
-  const [scene, setScene] = useState<MarketingScene>('new_product');
-  const [style, setStyle] = useState<StyleTemplate>('young_trendy');
+  const [channels, setChannels] = useState<Channel[]>(defaultChannels);
+  const [scene, setScene] = useState<MarketingScene>(defaultScene);
+  const [style, setStyle] = useState<StyleTemplate>(defaultStyle);
   const [campaignInfo, setCampaignInfo] = useState<CampaignInfo>({});
   const [task, setTask] = useState<GenerationTask | null>(null);
-  const [history, setHistory] = useState<GenerationTask[]>([]);
+  const [sessions, setSessions] = useState<GenerationSession[]>([]);
+  const [currentSession, setCurrentSession] = useState<GenerationSession | null>(null);
   const [modifyingResultId, setModifyingResultId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setHistory(loadTaskHistory());
+    const storedSessions = loadSessions();
+    const storedCurrentSessionId = getCurrentSessionId();
+    const restoredSession =
+      storedSessions.find((session) => session.id === storedCurrentSessionId) ??
+      storedSessions[0] ??
+      createEmptySession();
+
+    restoreSession(restoredSession);
+    setSessions(loadSessions());
   }, []);
 
+  function restoreSession(session: GenerationSession) {
+    setCurrentSessionId(session.id);
+    setCurrentSession(session);
+    setModifyingResultId(null);
+    setRequestText('');
+
+    const activeTask = getActiveTask(session);
+    setTask(activeTask);
+
+    if (activeTask) {
+      setUploadedImageDataUrl(activeTask.request.uploadedImageDataUrl);
+      setChannels(activeTask.request.channels.length > 0 ? activeTask.request.channels : defaultChannels);
+      setScene(activeTask.request.scene);
+      setStyle(activeTask.request.style);
+      setCampaignInfo(activeTask.request.campaignInfo);
+      return;
+    }
+
+    resetComposerState();
+  }
+
+  function resetComposerState() {
+    setUploadedImageDataUrl(undefined);
+    setChannels(defaultChannels);
+    setScene(defaultScene);
+    setStyle(defaultStyle);
+    setCampaignInfo({});
+  }
+
   function persistTask(nextTask: GenerationTask) {
-    saveTaskToHistory(nextTask);
-    setHistory(loadTaskHistory());
+    const updatedSession = saveTaskToCurrentSession(nextTask);
+    setCurrentSession(updatedSession);
+    setSessions(loadSessions());
   }
 
   async function handleSubmit() {
@@ -102,6 +153,24 @@ export default function ImagePage() {
     }
   }
 
+  function handleCreateSession() {
+    const nextSession = createEmptySession();
+    setCurrentSession(nextSession);
+    setSessions(loadSessions());
+    setTask(null);
+    setRequestText('');
+    setModifyingResultId(null);
+    setError(null);
+    resetComposerState();
+    setActiveSheet(null);
+  }
+
+  function handleSelectSession(session: GenerationSession) {
+    restoreSession(session);
+    setSessions(loadSessions());
+    setActiveSheet(null);
+  }
+
   function cancelModification() {
     setModifyingResultId(null);
     setRequestText('');
@@ -114,10 +183,18 @@ export default function ImagePage() {
           <Link href="/" className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface">
             <ArrowLeft size={18} aria-hidden="true" />
           </Link>
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="text-[22px] font-semibold text-ink">图片营销</h1>
-            <p className="text-[13px] text-muted">一句话生成图文营销包</p>
+            <p className="truncate text-[13px] text-muted">{currentSession?.title ?? '一句话生成图文营销包'}</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setActiveSheet('menu')}
+            className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface"
+            aria-label="打开会话菜单"
+          >
+            <Menu size={18} aria-hidden="true" />
+          </button>
         </header>
 
         <section className="mt-5 flex-1 space-y-3">
@@ -133,24 +210,6 @@ export default function ImagePage() {
 
           {error ? (
             <div className="rounded-lg border border-warm bg-white p-3 text-[14px] text-warm">{error}</div>
-          ) : null}
-
-          {history.length > 0 && !task ? (
-            <section className="rounded-lg border border-line bg-surface p-3">
-              <p className="text-[15px] font-semibold text-ink">最近生成</p>
-              <div className="mt-2 grid gap-2">
-                {history.slice(0, 3).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setTask(item)}
-                    className="rounded-lg bg-canvas p-3 text-left text-[14px] leading-5 text-ink"
-                  >
-                    {item.request.requestText}
-                  </button>
-                ))}
-              </div>
-            </section>
           ) : null}
 
           {task ? (
@@ -214,6 +273,58 @@ export default function ImagePage() {
       <BottomSheet title="活动信息" open={activeSheet === 'info'} onClose={() => setActiveSheet(null)}>
         <ActivityInfoForm value={campaignInfo} onChange={setCampaignInfo} />
       </BottomSheet>
+
+      <BottomSheet title="会话菜单" open={activeSheet === 'menu'} onClose={() => setActiveSheet(null)}>
+        <div className="grid gap-4">
+          <button
+            type="button"
+            onClick={handleCreateSession}
+            className="h-11 rounded-lg bg-accent text-[15px] font-semibold text-white"
+          >
+            新建聊天会话
+          </button>
+
+          <section>
+            <h2 className="text-[15px] font-semibold text-ink">历史会话记录</h2>
+            <div className="mt-2 grid gap-2">
+              {sessions.length > 0 ? (
+                sessions.map((session) => (
+                  <button
+                    key={session.id}
+                    type="button"
+                    onClick={() => handleSelectSession(session)}
+                    className="rounded-lg border border-line bg-white p-3 text-left"
+                  >
+                    <span className="block text-[14px] font-semibold leading-5 text-ink">{session.title}</span>
+                    <span className="mt-1 block text-[12px] leading-5 text-muted">
+                      {getSessionSummary(session)}
+                    </span>
+                    <span className="mt-1 block text-[11px] text-muted">
+                      {formatSessionTime(session.updatedAt)}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <p className="rounded-lg bg-canvas p-3 text-[13px] text-muted">暂无历史会话</p>
+              )}
+            </div>
+          </section>
+        </div>
+      </BottomSheet>
     </AppShell>
   );
+}
+
+function getSessionSummary(session: GenerationSession) {
+  const activeTask = getActiveTask(session);
+  return activeTask?.request.requestText ?? '暂无生成内容';
+}
+
+function formatSessionTime(value: string) {
+  return new Date(value).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
