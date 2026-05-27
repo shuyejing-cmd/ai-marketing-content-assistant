@@ -8,6 +8,7 @@ out/
 # Test artifacts
 test-results/
 playwright-report/
+.worktrees/
 
 # Logs
 npm-debug.log*
