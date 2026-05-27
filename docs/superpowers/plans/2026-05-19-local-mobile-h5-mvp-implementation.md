@@ -1,3 +1,13 @@
+# Status Note
+
+Status: Completed / superseded by the current `apps/web` implementation.
+
+This historical plan describes the first local mobile H5 mock MVP. The current product has moved beyond this plan: `apps/web` now includes PostgreSQL + Prisma persistence, APIMart `gpt-image-2-official`, Tencent COS upload-image bridging, Ark text copy generation, template management, free/template session isolation, and direct model-image download.
+
+For current facts, read the root context files first: `AGENTS.md`, `CURRENT_STATUS.md`, `NEXT_TASKS.md`, `ARCHITECTURE.md`, `PROJECT_BRIEF.md`, and `DECISIONS.md`.
+
+---
+
 # Local Mobile H5 MVP Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

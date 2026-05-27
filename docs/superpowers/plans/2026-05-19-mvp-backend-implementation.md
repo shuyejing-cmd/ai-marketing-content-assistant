@@ -1,3 +1,15 @@
+# Status Note
+
+Status: Deferred.
+
+This historical plan describes a NestJS MVP backend. NestJS is still a long-term direction, but it is not enabled in the current implementation. The current working product remains in `apps/web` using Next.js App Router, API Routes, Prisma, PostgreSQL, APIMart, Tencent COS, and Ark text provider.
+
+The next P0 task is not NestJS migration. It is the email/password account registration system and multi-user data isolation inside `apps/web`.
+
+For current facts, read the root context files first: `AGENTS.md`, `CURRENT_STATUS.md`, `NEXT_TASKS.md`, `ARCHITECTURE.md`, `PROJECT_BRIEF.md`, and `DECISIONS.md`.
+
+---
+
 # MVP Backend Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -206,7 +218,7 @@ volumes:
 # apps/api/.env.example
 NODE_ENV=development
 PORT=3001
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_marketing
+# DATABASE_URL should point to local PostgreSQL. Do not write real credentials in docs.
 REDIS_URL=redis://localhost:6379
 STORAGE_DRIVER=local
 LOCAL_STORAGE_DIR=.local-storage

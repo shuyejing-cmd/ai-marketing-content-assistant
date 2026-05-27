@@ -1,3 +1,21 @@
+# Current Implementation Addendum
+
+This is a historical product design spec. It remains useful for product intent, but it is not the current implementation state.
+
+Current implementation facts:
+
+- The working app is `apps/web`, not a separate NestJS backend.
+- The image MVP now uses APIMart `gpt-image-2-official`.
+- Uploaded images for APIMart image-to-image are bridged through private Tencent COS signed URLs.
+- Copywriting uses the Ark text provider.
+- Free sessions and template sessions are already separated by `Session.kind/templateId`.
+- Direct model-image download is implemented through `/api/download-image`.
+- The next P0 task is email/password account registration and multi-user data isolation.
+
+For current facts, read the root context files first: `AGENTS.md`, `CURRENT_STATUS.md`, `NEXT_TASKS.md`, `ARCHITECTURE.md`, `PROJECT_BRIEF.md`, and `DECISIONS.md`.
+
+---
+
 # AI 营销内容助手产品设计
 
 日期：2026-05-18
@@ -511,4 +529,3 @@ MVP 应该给用户的感觉是简单、快速、可控、能直接发布。
 - 商品一致性控制
 - 渠道适配能力
 - 可复用的行业营销策略
-

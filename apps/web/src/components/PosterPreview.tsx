@@ -2,12 +2,22 @@ import type { GenerationResult } from '@/features/generation/generation-types';
 
 export function PosterPreview({ result }: { result: GenerationResult }) {
   const [headline, benefit, footer] = result.imageText;
+  const heroImage = result.generatedImageDataUrl ?? result.imageUrl ?? result.uploadedImageDataUrl;
+  const generatedImage = result.generatedImageDataUrl ?? (isMockImageUrl(result.imageUrl) ? undefined : result.imageUrl);
+
+  if (generatedImage) {
+    return (
+      <div className="relative aspect-[4/5] overflow-hidden rounded-lg bg-black">
+        <img src={generatedImage} alt="" className="h-full w-full object-contain" />
+      </div>
+    );
+  }
 
   return (
     <div className="relative aspect-[4/5] overflow-hidden rounded-lg bg-[#efe4d2] p-4">
       <div className="absolute inset-x-4 top-4 h-[46%] overflow-hidden rounded-lg bg-[#203b35]">
-        {result.uploadedImageDataUrl ? (
-          <img src={result.uploadedImageDataUrl} alt="" className="h-full w-full object-cover" />
+        {heroImage ? (
+          <img src={heroImage} alt="" className="h-full w-full object-cover" />
         ) : (
           <div className="grid h-full place-items-center px-6 text-center text-[15px] font-semibold leading-6 text-white">
             通用营销主视觉
@@ -26,4 +36,8 @@ export function PosterPreview({ result }: { result: GenerationResult }) {
       </div>
     </div>
   );
+}
+
+function isMockImageUrl(value: string | undefined) {
+  return !value || value.includes('/mock-generated/');
 }

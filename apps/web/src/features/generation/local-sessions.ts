@@ -3,6 +3,8 @@ import type { GenerationTask } from './generation-types';
 export type GenerationSession = {
   id: string;
   title: string;
+  kind?: 'free' | 'template';
+  templateId?: string | null;
   createdAt: string;
   updatedAt: string;
   tasks: GenerationTask[];

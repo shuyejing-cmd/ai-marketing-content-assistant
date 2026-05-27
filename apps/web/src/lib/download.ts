@@ -4,6 +4,12 @@ const CANVAS_WIDTH = 1080;
 const CANVAS_HEIGHT = 1350;
 
 export async function downloadResultAsPng(result: GenerationResult, filename: string) {
+  const directUrl = getDirectDownloadImageUrl(result);
+  if (directUrl) {
+    triggerDownload(getDownloadHref(directUrl, filename), filename);
+    return;
+  }
+
   const canvas = document.createElement('canvas');
   canvas.width = CANVAS_WIDTH;
   canvas.height = CANVAS_HEIGHT;
@@ -17,11 +23,44 @@ export async function downloadResultAsPng(result: GenerationResult, filename: st
 
   const blob = await canvasToBlob(canvas);
   const url = URL.createObjectURL(blob);
+  triggerDownload(url, filename);
+  URL.revokeObjectURL(url);
+}
+
+export function getDirectDownloadDataUrl(result: GenerationResult) {
+  return result.generatedImageDataUrl ?? null;
+}
+
+export function getDirectDownloadImageUrl(result: GenerationResult) {
+  if (result.generatedImageDataUrl) {
+    return result.generatedImageDataUrl;
+  }
+  if (result.imageUrl && !isMockImageUrl(result.imageUrl)) {
+    return result.imageUrl;
+  }
+  return null;
+}
+
+function getDownloadHref(url: string, filename: string) {
+  if (url.startsWith('data:')) {
+    return url;
+  }
+  const params = new URLSearchParams({
+    url,
+    filename,
+  });
+  return `/api/download-image?${params.toString()}`;
+}
+
+function isMockImageUrl(value: string) {
+  return value.includes('/mock-generated/');
+}
+
+function triggerDownload(url: string, filename: string) {
   const link = document.createElement('a');
   link.download = filename;
   link.href = url;
   link.click();
-  URL.revokeObjectURL(url);
 }
 
 async function drawPoster(context: CanvasRenderingContext2D, result: GenerationResult) {
@@ -43,7 +82,9 @@ async function drawHeroArea(context: CanvasRenderingContext2D, result: Generatio
   context.fillStyle = '#203b35';
   context.fill();
 
-  if (!result.uploadedImageDataUrl) {
+  const heroImage = result.generatedImageDataUrl ?? result.uploadedImageDataUrl;
+
+  if (!heroImage) {
     context.fillStyle = '#ffffff';
     context.font = '700 42px system-ui, sans-serif';
     context.textAlign = 'center';
@@ -51,8 +92,8 @@ async function drawHeroArea(context: CanvasRenderingContext2D, result: Generatio
     context.fillText('通用营销主视觉', CANVAS_WIDTH / 2, y + height / 2);
   }
 
-  if (result.uploadedImageDataUrl) {
-    await drawUploadedImage(context, result.uploadedImageDataUrl, x, y, width, height);
+  if (heroImage) {
+    await drawUploadedImage(context, heroImage, x, y, width, height);
   }
 }
 
