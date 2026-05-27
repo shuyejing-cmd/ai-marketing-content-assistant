@@ -13,11 +13,15 @@ export async function hashPassword(password: string) {
 }
 
 export async function verifyPassword(password: string, storedHash: string) {
-  const [version, saltBase64, hashBase64] = storedHash.split('$');
+  const parts = storedHash.split('$');
+  if (parts.length !== 3) return false;
+
+  const [version, saltBase64, hashBase64] = parts;
   if (version !== VERSION || !saltBase64 || !hashBase64) return false;
 
   const salt = Buffer.from(saltBase64, 'base64');
   const expected = Buffer.from(hashBase64, 'base64');
+  if (salt.length !== SALT_BYTES) return false;
   if (expected.length !== KEY_LENGTH) return false;
 
   const actual = (await scryptAsync(password, salt, expected.length)) as Buffer;
