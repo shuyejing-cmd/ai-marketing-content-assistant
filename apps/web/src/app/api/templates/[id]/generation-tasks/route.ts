@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getGenerationService } from '@/features/generation/server/runtime';
 import type { CampaignInfo } from '@/features/generation/generation-types';
 import { createTemplateRepository } from '@/features/templates/server/template-repository';
+import { getRequestOwner } from '@/features/auth/server/request-auth';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -15,7 +16,6 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const body = (await request.json().catch(() => ({}))) as {
-    ownerId?: string;
     sessionId?: string | null;
     uploadedImageDataUrl?: string;
     campaignInfo?: CampaignInfo;
@@ -25,8 +25,9 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
+    const { ownerId } = await getRequestOwner(request);
     const task = await getGenerationService().createTask({
-      ownerId: request.headers.get('x-owner-id') ?? body.ownerId ?? 'anonymous',
+      ownerId,
       sessionId: body.sessionId ?? null,
       request: {
         requestText: `使用模板：${template.title}`,

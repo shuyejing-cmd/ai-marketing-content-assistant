@@ -3,6 +3,7 @@ import { createSessionRepository } from '@/features/generation/server/session-re
 import type { SessionScope } from '@/features/generation/server/session-repository';
 import { getGenerationService } from '@/features/generation/server/runtime';
 import type { GenerationTask } from '@/features/generation/generation-types';
+import { getRequestOwner } from '@/features/auth/server/request-auth';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -11,15 +12,16 @@ type RouteContext = {
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
   const body = (await request.json()) as { title?: string };
-  const ownerId = getOwnerId(request);
+  const { ownerId } = await getRequestOwner(request);
   const session = await createSessionRepository().renameSession(ownerId, id, body.title ?? '');
   return NextResponse.json(await hydrateSession(ownerId, session));
 }
 
 export async function DELETE(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
+  const { ownerId } = await getRequestOwner(request);
   try {
-    await createSessionRepository().deleteSession(getOwnerId(request), id);
+    await createSessionRepository().deleteSession(ownerId, id);
     return NextResponse.json({ ok: true, deleted: true });
   } catch (error) {
     if (isNotFoundError(error)) {
@@ -30,10 +32,6 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       { status: 500 },
     );
   }
-}
-
-function getOwnerId(request: NextRequest) {
-  return request.headers.get('x-owner-id') ?? 'anonymous';
 }
 
 function isNotFoundError(error: unknown) {

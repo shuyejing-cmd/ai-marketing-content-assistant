@@ -12,6 +12,10 @@ vi.mock('../src/features/generation/server/runtime', () => ({
   getGenerationService: vi.fn(),
 }));
 
+vi.mock('../src/features/auth/server/request-auth', () => ({
+  getRequestOwner: vi.fn(async () => ({ ownerId: 'owner_1', user: null })),
+}));
+
 const createRepository = vi.mocked(createTemplateRepository);
 const getService = vi.mocked(getGenerationService);
 

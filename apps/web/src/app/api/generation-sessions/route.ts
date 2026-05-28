@@ -3,9 +3,10 @@ import { createSessionRepository } from '@/features/generation/server/session-re
 import type { SessionScope } from '@/features/generation/server/session-repository';
 import { getGenerationService } from '@/features/generation/server/runtime';
 import type { GenerationTask } from '@/features/generation/generation-types';
+import { getRequestOwner } from '@/features/auth/server/request-auth';
 
 export async function GET(request: NextRequest) {
-  const ownerId = getOwnerId(request);
+  const { ownerId } = await getRequestOwner(request);
   const scope = getScope(request);
   const sessions = await createSessionRepository().listSessions(ownerId, scope);
   const hydrated = await Promise.all(sessions.map((session) => hydrateSession(ownerId, session, scope)));
@@ -13,15 +14,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const ownerId = getOwnerId(request);
+  const { ownerId } = await getRequestOwner(request);
   const body = (await request.json().catch(() => ({}))) as Partial<SessionScope>;
   const scope = normalizeScope(body);
   const session = await createSessionRepository().createSession(ownerId, scope);
   return NextResponse.json(await hydrateSession(ownerId, session, scope), { status: 201 });
-}
-
-function getOwnerId(request: NextRequest) {
-  return request.headers.get('x-owner-id') ?? 'anonymous';
 }
 
 function getScope(request: NextRequest): SessionScope {

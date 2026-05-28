@@ -13,6 +13,10 @@ vi.mock('../src/features/generation/server/runtime', () => ({
   })),
 }));
 
+vi.mock('../src/features/auth/server/request-auth', () => ({
+  getRequestOwner: vi.fn(async () => ({ ownerId: 'owner_1', user: null })),
+}));
+
 const createRepository = vi.mocked(createSessionRepository);
 
 const session = {
