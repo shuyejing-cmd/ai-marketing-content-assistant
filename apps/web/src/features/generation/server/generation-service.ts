@@ -25,7 +25,7 @@ export type GenerationStore = {
   saveImageAsset(asset: ImageAssetRecord): Promise<void>;
   getImageAsset(id: string): Promise<ImageAssetRecord | null>;
   getTask(taskId: string): Promise<GenerationTask | null>;
-  getTaskForOwner?(ownerId: string, taskId: string): Promise<GenerationTask | null>;
+  getTaskForOwner(ownerId: string, taskId: string): Promise<GenerationTask | null>;
   listTasksForSession?(ownerId: string, sessionId: string): Promise<GenerationTask[]>;
 };
 
@@ -330,7 +330,7 @@ export function createGenerationService(options: CreateServiceOptions = {}) {
     },
 
     getTaskForOwner(ownerId: string, taskId: string) {
-      return store.getTaskForOwner?.(ownerId, taskId) ?? Promise.resolve(null);
+      return store.getTaskForOwner(ownerId, taskId);
     },
 
     listTasksForSession(ownerId: string, sessionId: string) {

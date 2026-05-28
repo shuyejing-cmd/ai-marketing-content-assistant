@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
+import { GET as getTask } from '../src/app/api/generation-tasks/[id]/route';
 import { POST as createTask } from '../src/app/api/generation-tasks/route';
 import { POST as modifyTask } from '../src/app/api/generation-tasks/[id]/modify/route';
 import { POST as regenerateTask } from '../src/app/api/generation-tasks/[id]/regenerate/route';
@@ -177,6 +178,43 @@ describe('request owner API routing', () => {
     );
   });
 
+  it('generation task detail returns 404 when the task does not belong to the authenticated owner', async () => {
+    getService.mockReturnValue({
+      getTask: vi.fn(async () => generationTask),
+      getTaskForOwner: vi.fn(async () => null),
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await getTask(
+      new Request('http://localhost/api/generation-tasks/task_1', {
+        headers: { 'x-owner-id': 'owner_spoofed' },
+      }),
+      { params: Promise.resolve({ id: 'task_1' }) },
+    );
+
+    expect(response.status).toBe(404);
+    expect(getOwner).toHaveBeenCalled();
+    expect(getService().getTaskForOwner).toHaveBeenCalledWith('user:auth_user', 'task_1');
+  });
+
+  it('generation task detail uses authenticated ownerId when x-owner-id is spoofed', async () => {
+    getService.mockReturnValue({
+      getTask: vi.fn(async () => null),
+      getTaskForOwner: vi.fn(async () => generationTask),
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await getTask(
+      new Request('http://localhost/api/generation-tasks/task_1', {
+        headers: { 'x-owner-id': 'owner_spoofed' },
+      }),
+      { params: Promise.resolve({ id: 'task_1' }) },
+    );
+
+    await expect(response.json()).resolves.toEqual(generationTask);
+    expect(response.status).toBe(200);
+    expect(getOwner).toHaveBeenCalled();
+    expect(getService().getTaskForOwner).toHaveBeenCalledWith('user:auth_user', 'task_1');
+  });
+
   it('regenerate returns 404 when the task does not belong to the authenticated owner', async () => {
     const createTaskForOwner = vi.fn(async () => generationTask);
     getService.mockReturnValue({
@@ -305,6 +343,7 @@ describe('request owner API routing', () => {
     } as unknown as ReturnType<typeof createSessionRepository>);
     getService.mockReturnValue({
       getTask: vi.fn(),
+      getTaskForOwner: vi.fn(async () => null),
       listTasksForSession: vi.fn(async () => []),
     } as unknown as ReturnType<typeof getGenerationService>);
 
@@ -319,6 +358,29 @@ describe('request owner API routing', () => {
     expect(listSessionsForOwner).toHaveBeenCalledWith('user:auth_user', { kind: 'free' });
   });
 
+  it('generation sessions list does not hydrate a stale currentTaskId from another owner', async () => {
+    const staleSession = { ...session, currentTaskId: 'task_1' };
+    createSessions.mockReturnValue({
+      listSessions: vi.fn(async () => [staleSession]),
+    } as unknown as ReturnType<typeof createSessionRepository>);
+    getService.mockReturnValue({
+      getTask: vi.fn(async () => generationTask),
+      getTaskForOwner: vi.fn(async () => null),
+      listTasksForSession: vi.fn(async () => []),
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await listSessions(
+      new Request('http://localhost/api/generation-sessions', {
+        headers: { 'x-owner-id': 'owner_spoofed' },
+      }),
+    );
+
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body[0].activeTaskId).toBeNull();
+    expect(getService().getTaskForOwner).toHaveBeenCalledWith('user:auth_user', 'task_1');
+  });
+
   it('generation sessions create uses authenticated getRequestOwner ownerId even when x-owner-id is spoofed', async () => {
     const createSessionForOwner = vi.fn(async () => session);
     createSessions.mockReturnValue({
@@ -326,6 +388,7 @@ describe('request owner API routing', () => {
     } as unknown as ReturnType<typeof createSessionRepository>);
     getService.mockReturnValue({
       getTask: vi.fn(),
+      getTaskForOwner: vi.fn(async () => null),
       listTasksForSession: vi.fn(async () => []),
     } as unknown as ReturnType<typeof getGenerationService>);
 
@@ -349,6 +412,7 @@ describe('request owner API routing', () => {
     } as unknown as ReturnType<typeof createSessionRepository>);
     getService.mockReturnValue({
       getTask: vi.fn(),
+      getTaskForOwner: vi.fn(async () => null),
       listTasksForSession: vi.fn(async () => []),
     } as unknown as ReturnType<typeof getGenerationService>);
 

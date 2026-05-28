@@ -47,7 +47,9 @@ async function hydrateSession(ownerId: string, session: {
   const generationService = getGenerationService();
   const allTasks = await generationService.listTasksForSession(ownerId, session.id);
   const tasks = filterTasksForScope(allTasks, scope);
-  const fetchedActiveTask = session.currentTaskId ? await generationService.getTask(session.currentTaskId) : null;
+  const fetchedActiveTask = session.currentTaskId
+    ? await generationService.getTaskForOwner(ownerId, session.currentTaskId)
+    : null;
   const activeTask = session.currentTaskId
     ? tasks.find((task) => task.id === session.currentTaskId) ??
       (fetchedActiveTask && taskMatchesScope(fetchedActiveTask, scope) ? fetchedActiveTask : null)
