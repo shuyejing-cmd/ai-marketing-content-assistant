@@ -22,6 +22,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function unwrapGenerationRequest(body: GenerationTaskRequest | { request: GenerationTaskRequest }) {
-  return 'request' in body ? body.request : body;
+function unwrapGenerationRequest(body: (GenerationTaskRequest & { ownerId?: unknown }) | { request: GenerationTaskRequest }) {
+  if ('request' in body) return body.request;
+  const { ownerId: _ownerId, ...generationRequest } = body;
+  return generationRequest;
 }

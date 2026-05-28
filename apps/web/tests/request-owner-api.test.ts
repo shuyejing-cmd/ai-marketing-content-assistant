@@ -83,7 +83,7 @@ describe('request owner API routing', () => {
         ownerId: 'user:victim',
         sessionId: 'session_1',
         request: generationRequest,
-      }),
+      }, { 'x-owner-id': 'owner_spoofed' }),
     );
 
     expect(response.status).toBe(201);
@@ -92,6 +92,34 @@ describe('request owner API routing', () => {
       expect.objectContaining({
         ownerId: 'user:auth_user',
         sessionId: 'session_1',
+      }),
+    );
+  });
+
+  it('flat free generation task does not forward body.ownerId inside the generation request', async () => {
+    const createTaskForOwner = vi.fn(async (input) => ({
+      id: 'task_1',
+      status: 'succeeded',
+      request: input.request,
+      results: [],
+    }));
+    getService.mockReturnValue({
+      createTask: createTaskForOwner,
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await createTask(
+      jsonRequest('/api/generation-tasks', {
+        ...generationRequest,
+        ownerId: 'user:victim',
+        sessionId: 'session_1',
+      }, { 'x-owner-id': 'owner_spoofed' }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(createTaskForOwner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerId: 'user:auth_user',
+        request: expect.not.objectContaining({ ownerId: 'user:victim' }),
       }),
     );
   });
@@ -126,7 +154,7 @@ describe('request owner API routing', () => {
         ownerId: 'user:victim',
         sessionId: 'session_1',
         uploadedImageDataUrl: 'data:image/png;base64,input',
-      }),
+      }, { 'x-owner-id': 'owner_spoofed' }),
       { params: Promise.resolve({ id: 'tpl_1' }) },
     );
 
@@ -172,7 +200,11 @@ describe('request owner API routing', () => {
     } as unknown as ReturnType<typeof getGenerationService>);
 
     const response = await createSession(
-      jsonRequest('/api/generation-sessions', { kind: 'free' }, { 'x-owner-id': 'owner_spoofed' }),
+      jsonRequest(
+        '/api/generation-sessions',
+        { kind: 'free', ownerId: 'user:victim' },
+        { 'x-owner-id': 'owner_spoofed' },
+      ),
     );
 
     expect(response.status).toBe(201);
@@ -191,7 +223,11 @@ describe('request owner API routing', () => {
     } as unknown as ReturnType<typeof getGenerationService>);
 
     const response = await PATCH(
-      jsonRequest('/api/generation-sessions/session_1', { title: 'Renamed' }, { 'x-owner-id': 'owner_spoofed' }),
+      jsonRequest(
+        '/api/generation-sessions/session_1',
+        { title: 'Renamed', ownerId: 'user:victim' },
+        { 'x-owner-id': 'owner_spoofed' },
+      ),
       { params: Promise.resolve({ id: 'session_1' }) },
     );
 
