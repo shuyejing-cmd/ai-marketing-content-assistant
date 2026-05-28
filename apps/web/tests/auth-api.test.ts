@@ -130,6 +130,21 @@ describe('auth API routes', () => {
     expect(body).toEqual({ message: '该邮箱已注册' });
   });
 
+  it('register safely treats JSON null as an empty body', async () => {
+    service.register.mockRejectedValueOnce(new Error('validation failed'));
+
+    const response = await register(jsonRequest('/api/auth/register', null));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({ message: 'validation failed' });
+    expect(service.register).toHaveBeenCalledWith({
+      email: '',
+      password: '',
+      anonymousOwnerId: undefined,
+    });
+  });
+
   it('login sets cookie and then me returns current user when cookie is present', async () => {
     const loginResponse = await login(
       jsonRequest('/api/auth/login', {
@@ -173,6 +188,21 @@ describe('auth API routes', () => {
 
     expect(response.status).toBe(401);
     expect(body).toEqual({ message: '邮箱或密码不正确' });
+  });
+
+  it('login safely treats JSON null as an empty body', async () => {
+    service.login.mockRejectedValueOnce(new Error('validation failed'));
+
+    const response = await login(jsonRequest('/api/auth/login', null));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({ message: 'validation failed' });
+    expect(service.login).toHaveBeenCalledWith({
+      email: '',
+      password: '',
+      anonymousOwnerId: undefined,
+    });
   });
 
   it('logout calls service with raw cookie token and clears cookie', async () => {

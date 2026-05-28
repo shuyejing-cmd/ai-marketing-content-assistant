@@ -5,7 +5,8 @@ import { setAuthCookie } from '../../../../features/auth/server/cookies';
 import { isAnonymousOwnerId } from '../../../../features/auth/server/owner';
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({}));
+  const rawBody = await request.json().catch(() => ({}));
+  const body = isObjectRecord(rawBody) ? rawBody : {};
   const email = typeof body.email === 'string' ? body.email : '';
   const password = typeof body.password === 'string' ? body.password : '';
   const anonymousOwnerId = isAnonymousOwnerId(body.anonymousOwnerId) ? body.anonymousOwnerId : undefined;
@@ -26,4 +27,8 @@ export async function POST(request: Request) {
       { status: message === '邮箱或密码不正确' ? 401 : 400 },
     );
   }
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
