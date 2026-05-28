@@ -175,6 +175,22 @@ describe('auth API routes', () => {
     expect(meBody).toEqual({ user });
   });
 
+  it('login ignores account-style anonymous owner ids', async () => {
+    await login(
+      jsonRequest('/api/auth/login', {
+        email: 'person@example.com',
+        password: 'password123',
+        anonymousOwnerId: 'user:existing',
+      }),
+    );
+
+    expect(service.login).toHaveBeenCalledWith({
+      email: 'person@example.com',
+      password: 'password123',
+      anonymousOwnerId: undefined,
+    });
+  });
+
   it('invalid login returns 401 with the service message', async () => {
     service.login.mockRejectedValueOnce(new Error('邮箱或密码不正确'));
 
@@ -260,6 +276,28 @@ describe('request auth helpers', () => {
     );
 
     expect(owner).toEqual({ ownerId: 'owner_browser', user: null });
+  });
+
+  it('rejects account-style x-owner-id for anonymous requests', async () => {
+    const owner = await getRequestOwner(
+      new Request('http://localhost/api/anything', {
+        headers: { 'x-owner-id': 'user:victim' },
+      }),
+    );
+
+    expect(owner).toEqual({ ownerId: 'anonymous', user: null });
+  });
+
+  it('falls back to anonymous when x-owner-id is missing or invalid', async () => {
+    const missing = await getRequestOwner(new Request('http://localhost/api/anything'));
+    const invalid = await getRequestOwner(
+      new Request('http://localhost/api/anything', {
+        headers: { 'x-owner-id': 'not-an-owner' },
+      }),
+    );
+
+    expect(missing).toEqual({ ownerId: 'anonymous', user: null });
+    expect(invalid).toEqual({ ownerId: 'anonymous', user: null });
   });
 
   it('requireAdmin returns 401, 403, or the admin user', async () => {

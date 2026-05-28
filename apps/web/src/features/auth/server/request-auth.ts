@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import type { PublicUser } from './auth-types';
 import { getAuthService } from './auth-service';
 import { readAuthCookie } from './cookies';
-import { userOwnerId } from './owner';
+import { isAnonymousOwnerId, userOwnerId } from './owner';
 
 export type RequestOwner = {
   ownerId: string;
@@ -20,7 +20,8 @@ export async function getRequestOwner(request: Request): Promise<RequestOwner> {
     return { ownerId: userOwnerId(user), user };
   }
 
-  return { ownerId: request.headers.get('x-owner-id') ?? 'anonymous', user: null };
+  const anonymousOwnerId = request.headers.get('x-owner-id');
+  return { ownerId: isAnonymousOwnerId(anonymousOwnerId) ? anonymousOwnerId : 'anonymous', user: null };
 }
 
 export async function requireAdmin(request: Request): Promise<PublicUser | NextResponse> {
