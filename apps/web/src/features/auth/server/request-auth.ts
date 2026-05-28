@@ -11,7 +11,10 @@ export type RequestOwner = {
 };
 
 export async function getCurrentUser(request: Request) {
-  return getAuthService().getUserBySessionToken(readAuthCookie(request));
+  const sessionToken = readAuthCookie(request);
+  if (!sessionToken) return null;
+
+  return getAuthService().getUserBySessionToken(sessionToken);
 }
 
 export async function getRequestOwner(request: Request): Promise<RequestOwner> {

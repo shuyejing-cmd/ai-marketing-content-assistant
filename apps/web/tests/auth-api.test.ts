@@ -241,7 +241,7 @@ describe('auth API routes', () => {
     const body = await response.json();
 
     expect(body).toEqual({ user: null });
-    expect(service.getUserBySessionToken).toHaveBeenCalledWith(null);
+    expect(service.getUserBySessionToken).not.toHaveBeenCalled();
   });
 });
 
@@ -276,6 +276,22 @@ describe('request auth helpers', () => {
     );
 
     expect(owner).toEqual({ ownerId: 'owner_browser', user: null });
+  });
+
+  it('falls back to anonymous owner without requiring auth service when no cookie is present', async () => {
+    getService.mockClear();
+    getService.mockImplementation(() => {
+      throw new Error('DATABASE_URL is required');
+    });
+
+    const owner = await getRequestOwner(
+      new Request('http://localhost/api/anything', {
+        headers: { 'x-owner-id': 'owner_browser' },
+      }),
+    );
+
+    expect(owner).toEqual({ ownerId: 'owner_browser', user: null });
+    expect(getService).not.toHaveBeenCalled();
   });
 
   it('rejects account-style x-owner-id for anonymous requests', async () => {
@@ -335,5 +351,17 @@ describe('request auth helpers', () => {
 
     expect(currentUser).toEqual(user);
     expect(service.getUserBySessionToken).toHaveBeenCalledWith('session_user');
+  });
+
+  it('getCurrentUser returns null without requiring auth service when no cookie is present', async () => {
+    getService.mockClear();
+    getService.mockImplementation(() => {
+      throw new Error('DATABASE_URL is required');
+    });
+
+    const currentUser = await getCurrentUser(new Request('http://localhost/api/auth/me'));
+
+    expect(currentUser).toBeNull();
+    expect(getService).not.toHaveBeenCalled();
   });
 });
