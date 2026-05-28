@@ -25,6 +25,7 @@ export type GenerationStore = {
   saveImageAsset(asset: ImageAssetRecord): Promise<void>;
   getImageAsset(id: string): Promise<ImageAssetRecord | null>;
   getTask(taskId: string): Promise<GenerationTask | null>;
+  getTaskForOwner?(ownerId: string, taskId: string): Promise<GenerationTask | null>;
   listTasksForSession?(ownerId: string, sessionId: string): Promise<GenerationTask[]>;
 };
 
@@ -328,6 +329,10 @@ export function createGenerationService(options: CreateServiceOptions = {}) {
       return store.getTask(taskId);
     },
 
+    getTaskForOwner(ownerId: string, taskId: string) {
+      return store.getTaskForOwner?.(ownerId, taskId) ?? Promise.resolve(null);
+    },
+
     listTasksForSession(ownerId: string, sessionId: string) {
       return store.listTasksForSession?.(ownerId, sessionId) ?? Promise.resolve([]);
     },
@@ -485,10 +490,15 @@ function toImageAsset(ownerId: string, kind: ImageAssetRecord['kind'], dataUrl: 
 
 function createMemoryGenerationStore(): GenerationStore {
   const tasks = new Map<string, GenerationTask>();
+  const taskMeta = new Map<string, { ownerId: string; sessionId: string | null }>();
   const imageAssets = new Map<string, ImageAssetRecord>();
   return {
-    async saveTask(task) {
+    async saveTask(task, meta) {
       tasks.set(task.id, task);
+      taskMeta.set(task.id, {
+        ownerId: meta?.ownerId ?? 'anonymous',
+        sessionId: meta?.sessionId ?? null,
+      });
     },
     async savePromptLog() {},
     async saveImageAsset(asset) {
@@ -498,6 +508,11 @@ function createMemoryGenerationStore(): GenerationStore {
       return imageAssets.get(id) ?? null;
     },
     async getTask(taskId) {
+      return tasks.get(taskId) ?? null;
+    },
+    async getTaskForOwner(ownerId, taskId) {
+      const meta = taskMeta.get(taskId);
+      if (meta?.ownerId !== ownerId) return null;
       return tasks.get(taskId) ?? null;
     },
   };

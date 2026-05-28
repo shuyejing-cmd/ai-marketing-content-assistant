@@ -1,6 +1,8 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
 import { POST as createTask } from '../src/app/api/generation-tasks/route';
+import { POST as modifyTask } from '../src/app/api/generation-tasks/[id]/modify/route';
+import { POST as regenerateTask } from '../src/app/api/generation-tasks/[id]/regenerate/route';
 import { DELETE, PATCH } from '../src/app/api/generation-sessions/[id]/route';
 import { GET as listSessions, POST as createSession } from '../src/app/api/generation-sessions/route';
 import { POST as createTemplateTask } from '../src/app/api/templates/[id]/generation-tasks/route';
@@ -49,6 +51,13 @@ const generationRequest = {
   scene: 'custom' as const,
   style: 'clean_premium' as const,
   campaignInfo: {},
+};
+
+const generationTask = {
+  id: 'task_1',
+  status: 'succeeded' as const,
+  request: generationRequest,
+  results: [],
 };
 
 function jsonRequest(path: string, body: unknown, headers?: HeadersInit) {
@@ -164,6 +173,127 @@ describe('request owner API routing', () => {
       expect.objectContaining({
         ownerId: 'user:auth_user',
         sessionId: 'session_1',
+      }),
+    );
+  });
+
+  it('regenerate returns 404 when the task does not belong to the authenticated owner', async () => {
+    const createTaskForOwner = vi.fn(async () => generationTask);
+    getService.mockReturnValue({
+      getTask: vi.fn(async () => generationTask),
+      getTaskForOwner: vi.fn(async () => null),
+      createTask: createTaskForOwner,
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await regenerateTask(
+      jsonRequest(
+        '/api/generation-tasks/task_1/regenerate',
+        { ownerId: 'user:victim', sessionId: 'session_1' },
+        { 'x-owner-id': 'owner_spoofed' },
+      ),
+      { params: Promise.resolve({ id: 'task_1' }) },
+    );
+
+    expect(response.status).toBe(404);
+    expect(getOwner).toHaveBeenCalled();
+    expect(getService().getTaskForOwner).toHaveBeenCalledWith('user:auth_user', 'task_1');
+    expect(createTaskForOwner).not.toHaveBeenCalled();
+  });
+
+  it('modify returns 404 when the task does not belong to the authenticated owner', async () => {
+    const createTaskForOwner = vi.fn(async () => generationTask);
+    getService.mockReturnValue({
+      getTask: vi.fn(async () => generationTask),
+      getTaskForOwner: vi.fn(async () => null),
+      createTask: createTaskForOwner,
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await modifyTask(
+      jsonRequest(
+        '/api/generation-tasks/task_1/modify',
+        {
+          selectedResultId: 'result_1',
+          modificationText: 'Make it warmer',
+          ownerId: 'user:victim',
+          sessionId: 'session_1',
+        },
+        { 'x-owner-id': 'owner_spoofed' },
+      ),
+      { params: Promise.resolve({ id: 'task_1' }) },
+    );
+
+    expect(response.status).toBe(404);
+    expect(getOwner).toHaveBeenCalled();
+    expect(getService().getTaskForOwner).toHaveBeenCalledWith('user:auth_user', 'task_1');
+    expect(createTaskForOwner).not.toHaveBeenCalled();
+  });
+
+  it('regenerate uses authenticated ownerId when spoofed owner values are present', async () => {
+    const createTaskForOwner = vi.fn(async (input) => ({
+      id: 'task_2',
+      status: 'succeeded',
+      request: input.request,
+      results: [],
+    }));
+    getService.mockReturnValue({
+      getTask: vi.fn(),
+      getTaskForOwner: vi.fn(async () => generationTask),
+      createTask: createTaskForOwner,
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await regenerateTask(
+      jsonRequest(
+        '/api/generation-tasks/task_1/regenerate',
+        { ownerId: 'user:victim', sessionId: 'session_1' },
+        { 'x-owner-id': 'owner_spoofed' },
+      ),
+      { params: Promise.resolve({ id: 'task_1' }) },
+    );
+
+    expect(response.status).toBe(201);
+    expect(createTaskForOwner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerId: 'user:auth_user',
+        sessionId: 'session_1',
+        request: generationRequest,
+      }),
+    );
+  });
+
+  it('modify uses authenticated ownerId when spoofed owner values are present', async () => {
+    const createTaskForOwner = vi.fn(async (input) => ({
+      id: 'task_2',
+      status: 'succeeded',
+      request: input.request,
+      results: [],
+    }));
+    getService.mockReturnValue({
+      getTask: vi.fn(),
+      getTaskForOwner: vi.fn(async () => generationTask),
+      createTask: createTaskForOwner,
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await modifyTask(
+      jsonRequest(
+        '/api/generation-tasks/task_1/modify',
+        {
+          selectedResultId: 'result_1',
+          modificationText: 'Make it warmer',
+          ownerId: 'user:victim',
+          sessionId: 'session_1',
+        },
+        { 'x-owner-id': 'owner_spoofed' },
+      ),
+      { params: Promise.resolve({ id: 'task_1' }) },
+    );
+
+    expect(response.status).toBe(201);
+    expect(createTaskForOwner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerId: 'user:auth_user',
+        sessionId: 'session_1',
+        request: generationRequest,
+        modificationText: 'Make it warmer',
       }),
     );
   });

@@ -102,6 +102,14 @@ export function createGenerationStore(): GenerationStore {
       if (!task) return null;
       return mapTask(task);
     },
+    async getTaskForOwner(ownerId, taskId) {
+      const task = await prisma.generationTask.findFirst({
+        where: { id: taskId, ownerId },
+        include: { results: true },
+      });
+      if (!task) return null;
+      return mapTask(task);
+    },
     async listTasksForSession(ownerId, sessionId) {
       const tasks = await prisma.generationTask.findMany({
         where: { ownerId, sessionId },
@@ -141,6 +149,11 @@ function createMemoryStore(): GenerationStore {
       return memoryImageAssets.find((asset) => asset.id === id) ?? null;
     },
     async getTask(taskId) {
+      return memoryTasks.get(taskId) ?? null;
+    },
+    async getTaskForOwner(ownerId, taskId) {
+      const meta = memoryTaskMeta.get(taskId);
+      if (meta?.ownerId !== ownerId) return null;
       return memoryTasks.get(taskId) ?? null;
     },
     async listTasksForSession(ownerId, sessionId) {

@@ -119,6 +119,41 @@ describe('generation service', () => {
     );
   });
 
+  it('returns tasks only when the owner matches the scoped task lookup', async () => {
+    const provider = {
+      generate: vi.fn(async () => ({
+        imageUrl: 'https://example.test/poster.png',
+        rawResponse: { provider: 'custom' },
+      })),
+    };
+    const copyProvider = {
+      generate: vi.fn(async () => ({
+        copy: {
+          title: 'AI title',
+          publishingCopy: 'AI copy',
+          imageText: ['AI image text'],
+        },
+        rawResponse: { provider: 'copy' },
+      })),
+    };
+    const store = createMemoryStore();
+    const service = createGenerationService({
+      provider,
+      copyProvider,
+      store,
+      logger: createTestLogger(),
+    });
+
+    const task = await service.createTask({
+      ownerId: 'owner_1',
+      sessionId: 'session_1',
+      request,
+    });
+
+    await expect(service.getTaskForOwner('owner_1', task.id)).resolves.toEqual(task);
+    await expect(service.getTaskForOwner('owner_2', task.id)).resolves.toBeNull();
+  });
+
   it('keeps the generated image and falls back to mock copy when the copy model fails', async () => {
     const provider = {
       generate: vi.fn(async () => ({
@@ -486,6 +521,7 @@ describe('generation service', () => {
 
 function createMemoryStore() {
   const tasks: unknown[] = [];
+  const taskMeta = new Map<string, { ownerId: string }>();
   const promptLogs: unknown[] = [];
   const imageAssets: unknown[] = [];
 
@@ -493,8 +529,9 @@ function createMemoryStore() {
     tasks,
     promptLogs,
     imageAssets,
-    async saveTask(task: unknown, meta?: unknown) {
+    async saveTask(task: unknown, meta?: { ownerId?: string }) {
       tasks.push(task);
+      taskMeta.set((task as { id: string }).id, { ownerId: meta?.ownerId ?? 'anonymous' });
     },
     async savePromptLog(log: unknown) {
       promptLogs.push(log);
@@ -509,6 +546,11 @@ function createMemoryStore() {
     },
     async getTask() {
       return tasks[0] ?? null;
+    },
+    async getTaskForOwner(ownerId: string, taskId: string) {
+      const meta = taskMeta.get(taskId);
+      if (meta?.ownerId !== ownerId) return null;
+      return (tasks as Array<{ id: string }>).find((task) => task.id === taskId) ?? null;
     },
   };
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getRequestOwner } from '@/features/auth/server/request-auth';
 import { getGenerationService } from '@/features/generation/server/runtime';
 import { createTemplateRepository } from '@/features/templates/server/template-repository';
 
@@ -9,8 +10,9 @@ type RouteContext = {
 export async function POST(request: Request, context: RouteContext) {
   const { id } = await context.params;
   const body = await request.json().catch(() => ({}));
+  const { ownerId } = await getRequestOwner(request);
   const service = getGenerationService();
-  const previous = await service.getTask(id);
+  const previous = await service.getTaskForOwner(ownerId, id);
   if (!previous) {
     return NextResponse.json({ message: 'Task not found' }, { status: 404 });
   }
@@ -20,7 +22,7 @@ export async function POST(request: Request, context: RouteContext) {
       ? (await createTemplateRepository().getAdminTemplate(previous.request.templateId))?.prompt
       : undefined;
     const task = await service.createTask({
-      ownerId: request.headers.get('x-owner-id') ?? body.ownerId ?? 'anonymous',
+      ownerId,
       sessionId: body.sessionId ?? null,
       request: previous.request,
       templateInstruction,
