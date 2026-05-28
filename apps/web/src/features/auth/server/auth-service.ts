@@ -25,6 +25,7 @@ type DbUserRecord = Omit<UserRecord, 'role'> & {
 };
 
 type AuthServicePrisma = {
+  $transaction?(operations: Array<Promise<unknown>>): Promise<unknown>;
   user: {
     create(args: { data: UserRecord }): Promise<DbUserRecord>;
     findUnique(args: { where: { email?: string; id?: string } }): Promise<DbUserRecord | null>;
@@ -128,7 +129,7 @@ export function createAuthService(prisma: AuthServicePrisma) {
     },
 
     async getUserBySessionToken(token: string | null | undefined): Promise<PublicUser | null> {
-      if (!token) return null;
+      if (!isSessionToken(token)) return null;
 
       const session = await prisma.authSession.findUnique({
         where: { tokenHash: hashSessionToken(token) },
@@ -143,7 +144,7 @@ export function createAuthService(prisma: AuthServicePrisma) {
     },
 
     async logout(token: string | null | undefined) {
-      if (!token) return;
+      if (!isSessionToken(token)) return;
 
       await prisma.authSession.deleteMany({ where: { tokenHash: hashSessionToken(token) } });
     },
@@ -167,11 +168,18 @@ function validateRegistrationInput(email: string, password: string) {
 async function bindAnonymousOwner(prisma: AuthServicePrisma, anonymousOwnerId: string | undefined, accountOwnerId: string) {
   if (!isAnonymousOwnerId(anonymousOwnerId)) return;
 
-  await Promise.all([
+  const operations = [
     prisma.session.updateMany({ where: { ownerId: anonymousOwnerId }, data: { ownerId: accountOwnerId } }),
     prisma.generationTask.updateMany({ where: { ownerId: anonymousOwnerId }, data: { ownerId: accountOwnerId } }),
     prisma.imageAsset.updateMany({ where: { ownerId: anonymousOwnerId }, data: { ownerId: accountOwnerId } }),
-  ]);
+  ];
+
+  if (prisma.$transaction) {
+    await prisma.$transaction(operations);
+    return;
+  }
+
+  await Promise.all(operations);
 }
 
 async function createLoginSession(prisma: AuthServicePrisma, user: DbUserRecord): Promise<AuthResult> {
@@ -196,6 +204,10 @@ async function createLoginSession(prisma: AuthServicePrisma, user: DbUserRecord)
 
 function makeSessionToken() {
   return `session_${randomBytes(32).toString('base64url')}`;
+}
+
+function isSessionToken(token: string | null | undefined): token is string {
+  return typeof token === 'string' && token.startsWith('session_');
 }
 
 function hashSessionToken(token: string) {

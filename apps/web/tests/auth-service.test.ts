@@ -1,6 +1,14 @@
 import { createHash } from 'node:crypto';
 
 import { createAuthService } from '../src/features/auth/server/auth-service';
+import {
+  AUTH_COOKIE_NAME,
+  clearAuthCookie,
+  readAuthCookie,
+  readCookie,
+  setAuthCookie,
+} from '../src/features/auth/server/cookies';
+import { isAnonymousOwnerId } from '../src/features/auth/server/owner';
 import { hashPassword } from '../src/features/auth/server/password';
 
 import { vi } from 'vitest';
@@ -26,7 +34,7 @@ function tokenHash(token: string) {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function createPrismaMock() {
+function createPrismaMock({ withTransaction = false } = {}) {
   const users: StoredUser[] = [];
   const authSessions: StoredAuthSession[] = [];
   const sessions = [{ id: 'session_1', ownerId: 'owner_anon' }];
@@ -106,6 +114,11 @@ function createPrismaMock() {
     imageAsset: {
       updateMany: updateManyOwner(imageAssets),
     },
+    ...(withTransaction
+      ? {
+          $transaction: vi.fn(async (operations: Array<Promise<unknown>>) => Promise.all(operations)),
+        }
+      : {}),
   };
 
   return { prisma, users, authSessions, sessions, generationTasks, imageAssets };
@@ -138,6 +151,20 @@ describe('auth service', () => {
     expect(store.imageAssets[0].ownerId).toBe(`user:${result.user.id}`);
   });
 
+  it('uses a transaction when binding anonymous rows if the client supports it', async () => {
+    const store = createPrismaMock({ withTransaction: true });
+    const service = createAuthService(store.prisma);
+
+    await service.register({
+      email: 'person@example.com',
+      password: 'password123',
+      anonymousOwnerId: 'owner_anon',
+    });
+
+    expect(store.prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(store.prisma.$transaction).toHaveBeenCalledWith([expect.any(Promise), expect.any(Promise), expect.any(Promise)]);
+  });
+
   it('assigns admin role from AUTH_ADMIN_EMAILS', async () => {
     process.env.AUTH_ADMIN_EMAILS = 'admin@example.com, owner@example.com';
     const store = createPrismaMock();
@@ -164,6 +191,23 @@ describe('auth service', () => {
     expect(result.sessionToken).toMatch(/^session_/);
   });
 
+  it('binds anonymous rows during login', async () => {
+    const store = createPrismaMock();
+    const service = createAuthService(store.prisma);
+    const passwordHash = await hashPassword('password123');
+    store.users.push({ id: 'user_existing', email: 'person@example.com', passwordHash, role: 'user' });
+
+    await service.login({
+      email: 'person@example.com',
+      password: 'password123',
+      anonymousOwnerId: 'owner_anon',
+    });
+
+    expect(store.sessions[0].ownerId).toBe('user:user_existing');
+    expect(store.generationTasks[0].ownerId).toBe('user:user_existing');
+    expect(store.imageAssets[0].ownerId).toBe('user:user_existing');
+  });
+
   it('reads users by raw session token and logs out by raw token', async () => {
     const store = createPrismaMock();
     const service = createAuthService(store.prisma);
@@ -174,6 +218,36 @@ describe('auth service', () => {
     await service.logout(registered.sessionToken);
 
     await expect(service.getUserBySessionToken(registered.sessionToken)).resolves.toBeNull();
+  });
+
+  it('returns null for expired sessions and deletes expired rows during cleanup', async () => {
+    const store = createPrismaMock();
+    const service = createAuthService(store.prisma);
+    const registered = await service.register({ email: 'person@example.com', password: 'password123' });
+    const now = new Date('2026-05-28T00:00:00.000Z');
+    store.authSessions[0].expiresAt = new Date('2026-05-27T00:00:00.000Z');
+    store.authSessions.push({
+      id: 'auth_session_future',
+      userId: registered.user.id,
+      tokenHash: tokenHash('session_future'),
+      expiresAt: new Date('2026-05-29T00:00:00.000Z'),
+    });
+
+    await expect(service.getUserBySessionToken(registered.sessionToken)).resolves.toBeNull();
+    await expect(service.cleanupExpiredSessions(now)).resolves.toEqual({ count: 1 });
+    expect(store.authSessions).toHaveLength(1);
+    expect(store.authSessions[0].id).toBe('auth_session_future');
+  });
+
+  it('ignores malformed session tokens before querying or deleting sessions', async () => {
+    const store = createPrismaMock();
+    const service = createAuthService(store.prisma);
+
+    await expect(service.getUserBySessionToken('bad-token')).resolves.toBeNull();
+    await service.logout('bad-token');
+
+    expect(store.prisma.authSession.findUnique).not.toHaveBeenCalled();
+    expect(store.prisma.authSession.deleteMany).not.toHaveBeenCalled();
   });
 
   it('validates registration input and duplicate email', async () => {
@@ -192,5 +266,60 @@ describe('auth service', () => {
     await expect(service.register({ email: 'PERSON@example.com', password: 'password123' })).rejects.toThrow(
       '该邮箱已注册',
     );
+  });
+});
+
+describe('owner helpers', () => {
+  it('recognizes legacy anonymous owner ids without accepting account owner ids', () => {
+    expect(isAnonymousOwnerId('owner_browser_1')).toBe(true);
+    expect(isAnonymousOwnerId('owner_123_abc')).toBe(true);
+    expect(isAnonymousOwnerId('user:123')).toBe(false);
+    expect(isAnonymousOwnerId('browser_owner_1')).toBe(false);
+  });
+});
+
+describe('auth cookie helpers', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  it('reads and decodes cookie values', () => {
+    const request = new Request('https://example.com', {
+      headers: {
+        cookie: `other=value; ${AUTH_COOKIE_NAME}=session_%E4%B8%AD; encoded=a%3Db`,
+      },
+    });
+
+    expect(readCookie(request, 'encoded')).toBe('a=b');
+    expect(readAuthCookie(request)).toBe('session_中');
+    expect(readCookie(request, 'missing')).toBeNull();
+  });
+
+  it('sets auth cookies with secure attributes only in production and clears them', () => {
+    process.env.NODE_ENV = 'test';
+    const expiresAt = new Date('2026-06-27T00:00:00.000Z');
+    const response = new Response(null);
+
+    setAuthCookie(response, 'session_token', expiresAt);
+
+    const setCookie = response.headers.get('set-cookie');
+    expect(setCookie).toContain(`${AUTH_COOKIE_NAME}=session_token`);
+    expect(setCookie).toContain('HttpOnly');
+    expect(setCookie).toContain('SameSite=Lax');
+    expect(setCookie).toContain('Path=/');
+    expect(setCookie).toContain('Expires=Sat, 27 Jun 2026 00:00:00 GMT');
+    expect(setCookie).not.toContain('Secure');
+
+    process.env.NODE_ENV = 'production';
+    const productionResponse = new Response(null);
+    setAuthCookie(productionResponse, 'session_token', expiresAt);
+    expect(productionResponse.headers.get('set-cookie')).toContain('Secure');
+
+    const clearResponse = new Response(null);
+    clearAuthCookie(clearResponse);
+    expect(clearResponse.headers.get('set-cookie')).toContain(`${AUTH_COOKIE_NAME}=`);
+    expect(clearResponse.headers.get('set-cookie')).toContain('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
   });
 });
