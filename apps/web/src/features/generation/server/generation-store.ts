@@ -3,6 +3,12 @@ import { getPrismaClient } from './prisma';
 import type { GenerationStore, ImageAssetRecord, PromptLogRecord } from './generation-service';
 import { createSessionRepository } from './session-repository';
 
+type TaskSessionCandidate = {
+  id: string;
+  kind?: string | null;
+  templateId?: string | null;
+};
+
 const globalForGenerationStore = globalThis as unknown as {
   generationMemoryTasks?: Map<string, GenerationTask>;
   generationMemoryTaskMeta?: Map<string, { ownerId: string; sessionId: string | null; createdAt: Date }>;
@@ -27,7 +33,7 @@ export function createGenerationStore(): GenerationStore {
       const session = meta?.sessionId
         ? await prisma.session.findFirst({ where: { id: meta.sessionId, ownerId } })
         : null;
-      const sessionId = session?.id ?? null;
+      const sessionId = sessionMatchesTaskScope(task, session) ? session.id : null;
 
       await prisma.generationTask.create({
         data: {
@@ -133,7 +139,7 @@ function createMemoryStore(): GenerationStore {
       const ownerId = meta?.ownerId ?? 'anonymous';
       const sessions = createSessionRepository(null);
       const session = meta?.sessionId ? await sessions.getSession(ownerId, meta.sessionId) : null;
-      const sessionId = session?.id ?? null;
+      const sessionId = sessionMatchesTaskScope(task, session) ? session.id : null;
 
       memoryTasks.set(task.id, task);
       memoryTaskMeta.set(task.id, {
@@ -217,6 +223,18 @@ function mapTask(task: {
       uploadedImageDataUrl: result.uploadedImageDataUrl ?? undefined,
     })),
   };
+}
+
+function sessionMatchesTaskScope(
+  task: GenerationTask,
+  session: TaskSessionCandidate | null,
+): session is TaskSessionCandidate {
+  if (!session) return false;
+  const taskTemplateId = task.request.templateId;
+  if (taskTemplateId) {
+    return session.kind === 'template' && session.templateId === taskTemplateId;
+  }
+  return (session.kind == null || session.kind === 'free') && session.templateId == null;
 }
 
 function createSessionTitle(requestText: string) {
