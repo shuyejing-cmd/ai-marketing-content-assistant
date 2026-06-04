@@ -1,8 +1,10 @@
 import { GET as listTemplates } from '../src/app/api/templates/route';
-import { POST as createAdminTemplate } from '../src/app/api/admin/templates/route';
+import { GET as listAdminTemplates, POST as createAdminTemplate } from '../src/app/api/admin/templates/route';
+import { PATCH as updateAdminTemplate } from '../src/app/api/admin/templates/[id]/route';
 import { POST as createTemplateTask } from '../src/app/api/templates/[id]/generation-tasks/route';
 import { createTemplateRepository } from '../src/features/templates/server/template-repository';
 import { getGenerationService } from '../src/features/generation/server/runtime';
+import { requireAdmin } from '../src/features/auth/server/request-auth';
 
 vi.mock('../src/features/templates/server/template-repository', () => ({
   createTemplateRepository: vi.fn(),
@@ -14,10 +16,34 @@ vi.mock('../src/features/generation/server/runtime', () => ({
 
 vi.mock('../src/features/auth/server/request-auth', () => ({
   getRequestOwner: vi.fn(async () => ({ ownerId: 'owner_1', user: null })),
+  requireAdmin: vi.fn(async () => ({ id: 'user_admin', email: 'admin@example.com', role: 'admin' })),
 }));
 
 const createRepository = vi.mocked(createTemplateRepository);
 const getService = vi.mocked(getGenerationService);
+const requireAdminMock = vi.mocked(requireAdmin);
+
+const adminUser = { id: 'user_admin', email: 'admin@example.com', role: 'admin' as const };
+
+function adminDenied(status = 403, message = '没有权限访问模板管理') {
+  return Response.json({ message }, { status });
+}
+
+function adminTemplateRequest(body: unknown) {
+  return new Request('http://localhost/api/admin/templates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+function templatePatchRequest(id: string, body: unknown) {
+  return new Request(`http://localhost/api/admin/templates/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
 
 describe('template API', () => {
   afterEach(() => {
@@ -51,13 +77,50 @@ describe('template API', () => {
     expect(createRepository().listPublishedTemplates).toHaveBeenCalledWith('image');
   });
 
-  it('creates admin templates without an admin secret for local personal use', async () => {
+  it('blocks non-admin users from creating admin templates and does not create a template', async () => {
+    const createTemplate = vi.fn(async () => ({
+      id: 'tpl_admin_1',
+      type: 'image',
+      title: 'Local template',
+      description: 'Personal template',
+      coverImageDataUrl: 'data:image/png;base64,cover',
+      prompt: 'Internal template prompt',
+      published: true,
+      sortOrder: 3,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    requireAdminMock.mockResolvedValueOnce(adminDenied());
+    createRepository.mockReturnValue({
+      createTemplate,
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+
+    const response = await createAdminTemplate(
+      adminTemplateRequest({
+        type: 'image',
+        title: 'Local template',
+        description: 'Personal template',
+        coverImageDataUrl: 'data:image/png;base64,cover',
+        prompt: 'Internal template prompt',
+        published: true,
+        sortOrder: 3,
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body).toEqual({ message: '没有权限访问模板管理' });
+    expect(createTemplate).not.toHaveBeenCalled();
+  });
+
+  it('allows admin users to create admin templates and calls the repository', async () => {
     const createTemplate = vi.fn(async (input) => ({
       id: 'tpl_admin_1',
       ...input,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }));
+    requireAdminMock.mockResolvedValueOnce(adminUser);
     createRepository.mockReturnValue({
       createTemplate,
     } as unknown as ReturnType<typeof createTemplateRepository>);
@@ -89,6 +152,122 @@ describe('template API', () => {
         sortOrder: 3,
       }),
     );
+  });
+
+  it('blocks unauthenticated users from listing admin templates', async () => {
+    const listAdminTemplatesRepository = vi.fn(async () => []);
+    requireAdminMock.mockResolvedValueOnce(adminDenied(401, '请先登录'));
+    createRepository.mockReturnValue({
+      listAdminTemplates: listAdminTemplatesRepository,
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+
+    const response = await listAdminTemplates(new Request('http://localhost/api/admin/templates'));
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body).toEqual({ message: '请先登录' });
+    expect(listAdminTemplatesRepository).not.toHaveBeenCalled();
+  });
+
+  it('allows admin users to list admin templates', async () => {
+    const listAdminTemplatesRepository = vi.fn(async () => [
+      {
+        id: 'tpl_admin_1',
+        type: 'image',
+        title: 'Admin template',
+        description: 'Internal template',
+        coverImageDataUrl: 'data:image/png;base64,cover',
+        prompt: 'Internal template prompt',
+        published: true,
+        sortOrder: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+    requireAdminMock.mockResolvedValueOnce(adminUser);
+    createRepository.mockReturnValue({
+      listAdminTemplates: listAdminTemplatesRepository,
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+
+    const response = await listAdminTemplates(new Request('http://localhost/api/admin/templates'));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toHaveLength(1);
+    expect(listAdminTemplatesRepository).toHaveBeenCalledOnce();
+  });
+
+  it('blocks non-admin users from patching admin templates and does not update', async () => {
+    const updateTemplate = vi.fn(async (id, input) => ({
+      id,
+      type: 'image',
+      title: input.title,
+      description: 'Internal template',
+      coverImageDataUrl: 'data:image/png;base64,cover',
+      prompt: 'Internal template prompt',
+      published: true,
+      sortOrder: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    requireAdminMock.mockResolvedValueOnce(adminDenied());
+    createRepository.mockReturnValue({
+      updateTemplate,
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+
+    const response = await updateAdminTemplate(templatePatchRequest('tpl_admin_1', { title: 'Updated' }), {
+      params: Promise.resolve({ id: 'tpl_admin_1' }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body).toEqual({ message: '没有权限访问模板管理' });
+    expect(updateTemplate).not.toHaveBeenCalled();
+  });
+
+  it('allows admin users to patch admin templates', async () => {
+    const updateTemplate = vi.fn(async (id, input) => ({
+      id,
+      type: 'image',
+      title: input.title,
+      description: 'Internal template',
+      coverImageDataUrl: 'data:image/png;base64,cover',
+      prompt: 'Internal template prompt',
+      published: true,
+      sortOrder: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    requireAdminMock.mockResolvedValueOnce(adminUser);
+    createRepository.mockReturnValue({
+      updateTemplate,
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+
+    const response = await updateAdminTemplate(templatePatchRequest('tpl_admin_1', { title: 'Updated' }), {
+      params: Promise.resolve({ id: 'tpl_admin_1' }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.title).toBe('Updated');
+    expect(updateTemplate).toHaveBeenCalledWith('tpl_admin_1', { title: 'Updated' });
+  });
+
+  it('preserves missing-template 404 for admin patch requests', async () => {
+    const updateTemplate = vi.fn(async () => {
+      throw new Error('missing template');
+    });
+    requireAdminMock.mockResolvedValueOnce(adminUser);
+    createRepository.mockReturnValue({
+      updateTemplate,
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+
+    const response = await updateAdminTemplate(templatePatchRequest('tpl_missing', { title: 'Updated' }), {
+      params: Promise.resolve({ id: 'tpl_missing' }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(updateTemplate).toHaveBeenCalledWith('tpl_missing', { title: 'Updated' });
   });
 
   it('creates generation tasks with server-side template prompts only', async () => {
