@@ -23,11 +23,17 @@ export function createGenerationStore(): GenerationStore {
 
   return {
     async saveTask(task, meta) {
+      const ownerId = meta?.ownerId ?? 'anonymous';
+      const session = meta?.sessionId
+        ? await prisma.session.findFirst({ where: { id: meta.sessionId, ownerId } })
+        : null;
+      const sessionId = session?.id ?? null;
+
       await prisma.generationTask.create({
         data: {
           id: task.id,
-          ownerId: meta?.ownerId ?? 'anonymous',
-          sessionId: meta?.sessionId ?? null,
+          ownerId,
+          sessionId,
           status: task.status,
           requestJson: task.request,
           errorMessage: meta?.errorMessage ?? task.errorMessage ?? null,
@@ -47,9 +53,9 @@ export function createGenerationStore(): GenerationStore {
         },
       });
 
-      if (meta?.sessionId) {
+      if (sessionId) {
         await prisma.session.updateMany({
-          where: { id: meta.sessionId, ownerId: meta.ownerId },
+          where: { id: sessionId, ownerId },
           data: {
             currentTaskId: task.id,
             title: createSessionTitle(task.request.requestText),
@@ -124,16 +130,21 @@ export function createGenerationStore(): GenerationStore {
 function createMemoryStore(): GenerationStore {
   return {
     async saveTask(task, meta) {
+      const ownerId = meta?.ownerId ?? 'anonymous';
+      const sessions = createSessionRepository(null);
+      const session = meta?.sessionId ? await sessions.getSession(ownerId, meta.sessionId) : null;
+      const sessionId = session?.id ?? null;
+
       memoryTasks.set(task.id, task);
       memoryTaskMeta.set(task.id, {
-        ownerId: meta?.ownerId ?? 'anonymous',
-        sessionId: meta?.sessionId ?? null,
+        ownerId,
+        sessionId,
         createdAt: new Date(),
       });
-      if (meta?.sessionId) {
-        await createSessionRepository(null).setCurrentTask(
-          meta.ownerId,
-          meta.sessionId,
+      if (sessionId) {
+        await sessions.setCurrentTask(
+          ownerId,
+          sessionId,
           task.id,
           createSessionTitle(task.request.requestText),
         );
