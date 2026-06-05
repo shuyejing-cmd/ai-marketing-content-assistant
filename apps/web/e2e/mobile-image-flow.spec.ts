@@ -21,6 +21,24 @@ async function generateMarketingResults(page: Page) {
   await page.waitForLoadState('networkidle').catch(() => undefined);
 }
 
+async function registerUser(page: Page, email: string) {
+  await page.goto('/auth');
+  await page.getByRole('button', { name: /^注册$/ }).click();
+  await page.getByLabel('邮箱').fill(email);
+  await page.getByLabel('密码').fill('password123');
+  await page.getByRole('button', { name: '注册并保留内容' }).click();
+  await expect(page).toHaveURL('/');
+}
+
+async function logoutFromHomeMenu(page: Page, email: string) {
+  await page.goto('/');
+  await page.getByRole('button', { name: '打开主页菜单' }).click();
+  await expect(page.getByRole('dialog', { name: '主页菜单' })).toBeVisible();
+  await expect(page.getByText(email)).toBeVisible();
+  await page.getByRole('button', { name: '退出登录' }).click();
+  await expect(page.getByRole('link', { name: /登录 \/ 注册/ })).toBeVisible();
+}
+
 test('home page shows three marketing entrances and opens image page', async ({ page }) => {
   await page.goto('/');
 
@@ -34,13 +52,14 @@ test('home page shows three marketing entrances and opens image page', async ({ 
 });
 
 test('home page menu drawer opens template management entry', async ({ page }) => {
+  await authenticateAdmin(page.request);
   await page.goto('/');
 
   await page.getByRole('button', { name: '打开主页菜单' }).click();
   await expect(page.getByRole('dialog', { name: '主页菜单' })).toBeVisible();
   await expect(page.getByText('产品空间')).toBeVisible();
   await expect(page.getByText('个人空间')).toBeVisible();
-  await expect(page.getByText('账号能力即将开放')).toBeVisible();
+  await expect(page.getByText('admin@example.test')).toBeVisible();
 
   const templateLink = page.getByRole('link', { name: /模板创建\/管理/ });
   await expect(templateLink).toHaveAttribute('href', '/admin/templates');
@@ -50,6 +69,7 @@ test('home page menu drawer opens template management entry', async ({ page }) =
 
 test('published image template opens a locked upload-only template flow', async ({ page, request }) => {
   const templateTitle = `中秋模板 ${Date.now()}`;
+  await authenticateAdmin(request);
   const templateResponse = await request.post('/api/admin/templates', {
     data: {
       type: 'image',
@@ -87,6 +107,7 @@ test('published image template opens a locked upload-only template flow', async 
 
 test('video templates are listed as placeholders', async ({ page, request }) => {
   const templateTitle = `视频模板 ${Date.now()}`;
+  await authenticateAdmin(request);
   const templateResponse = await request.post('/api/admin/templates', {
     data: {
       type: 'video',
@@ -153,7 +174,49 @@ test('image page generates mock marketing result cards', async ({ page }) => {
   await expect(page.getByRole('button', { name: /二次修改/ }).first()).toBeVisible();
 });
 
+test('registered users do not share sessions', async ({ page }) => {
+  const suffix = Date.now();
+  const userA = `owner-a-${suffix}@example.test`;
+  const userB = `owner-b-${suffix}@example.test`;
+
+  await registerUser(page, userA);
+  await generateMarketingResults(page);
+  await expect(page.getByText('给新品奶茶做一张朋友圈宣传图').first()).toBeVisible();
+
+  await logoutFromHomeMenu(page, userA);
+
+  await registerUser(page, userB);
+  await page.goto('/image');
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  await expect(page.getByText('给新品奶茶做一张朋友圈宣传图').first()).toBeHidden();
+  await expect(page.getByRole('button', { name: /复制文案/ }).first()).toBeHidden();
+
+  await page.getByRole('button', { name: '打开会话菜单' }).click();
+  await expect(page.getByRole('button', { name: /给新品奶茶做/ }).first()).toBeHidden();
+});
+
+async function authenticateAdmin(request: APIRequestContext) {
+  const credentials = {
+    email: 'admin@example.test',
+    password: 'password123',
+  };
+  const registerResponse = await request.post('/api/auth/register', {
+    data: credentials,
+  });
+
+  if (registerResponse.ok()) {
+    return;
+  }
+
+  const loginResponse = await request.post('/api/auth/login', {
+    data: credentials,
+  });
+  expect(loginResponse.ok()).toBeTruthy();
+}
+
 async function createPublishedImageTemplate(request: APIRequestContext, title: string) {
+  await authenticateAdmin(request);
   const templateResponse = await request.post('/api/admin/templates', {
     data: {
       type: 'image',
