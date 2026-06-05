@@ -32,4 +32,17 @@ describe('PosterPreview', () => {
     expect(html).not.toContain('无图生成');
     expect(html).not.toContain('标题');
   });
+
+  it('does not request the mock placeholder image URL in fallback poster markup', () => {
+    const html = renderToStaticMarkup(createElement(PosterPreview, {
+      result: {
+        ...result,
+        generatedImageDataUrl: undefined,
+        imageUrl: '/mock-generated/poster-placeholder.svg',
+      },
+    }));
+
+    expect(html).not.toContain('/mock-generated/poster-placeholder.svg');
+    expect(html).toContain('通用营销主视觉');
+  });
 });

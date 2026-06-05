@@ -224,6 +224,27 @@ describe('auth service', () => {
     await expect(service.getUserBySessionToken(registered.sessionToken)).resolves.toBeNull();
   });
 
+  it('refreshes a session user role when reading the current session', async () => {
+    process.env.AUTH_ADMIN_EMAILS = 'person@example.com';
+    const store = createPrismaMock();
+    const service = createAuthService(store.prisma);
+    const passwordHash = await hashPassword('password123');
+    store.users.push({ id: 'user_existing', email: 'person@example.com', passwordHash, role: 'user' });
+    store.authSessions.push({
+      id: 'auth_session_existing',
+      userId: 'user_existing',
+      tokenHash: tokenHash('session_existing'),
+      expiresAt: new Date(Date.now() + 100000),
+    });
+
+    await expect(service.getUserBySessionToken('session_existing')).resolves.toEqual({
+      id: 'user_existing',
+      email: 'person@example.com',
+      role: 'admin',
+    });
+    expect(store.users[0].role).toBe('admin');
+  });
+
   it('returns null for expired sessions and deletes expired rows during cleanup', async () => {
     const store = createPrismaMock();
     const service = createAuthService(store.prisma);
@@ -310,6 +331,19 @@ describe('auth service', () => {
 
     await service.logout(login.sessionToken);
     await expect(service.getUserBySessionToken(login.sessionToken)).resolves.toBeNull();
+  });
+
+  it('treats local in-memory accounts as admins when no admin email list is configured', async () => {
+    delete process.env.DATABASE_URL;
+    process.env.AUTH_ADMIN_EMAILS = '';
+    const service = getAuthService();
+
+    const registered = await service.register({
+      email: `local-admin-${Date.now()}@example.com`,
+      password: 'password123',
+    });
+
+    expect(registered.user.role).toBe('admin');
   });
 });
 

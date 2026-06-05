@@ -57,6 +57,10 @@ type AuthServicePrisma = {
   };
 };
 
+type AuthServiceOptions = {
+  defaultRole?: UserRole;
+};
+
 const globalForMemoryAuth = globalThis as unknown as {
   authMemoryPrisma?: AuthServicePrisma;
   authMemoryUsers?: DbUserRecord[];
@@ -65,10 +69,19 @@ const globalForMemoryAuth = globalThis as unknown as {
 
 export function getAuthService() {
   const prisma = getPrismaClient();
-  return createAuthService(prisma ?? getMemoryAuthPrisma());
+  return prisma
+    ? createAuthService(prisma)
+    : createAuthService(getMemoryAuthPrisma(), {
+        defaultRole: getLocalMemoryDefaultRole(),
+      });
 }
 
-export function createAuthService(prisma: AuthServicePrisma) {
+export function createAuthService(prisma: AuthServicePrisma, options: AuthServiceOptions = {}) {
+  const resolveRole = (email: string) => {
+    const adminEmails = process.env.AUTH_ADMIN_EMAILS ?? '';
+    return adminEmails.trim() ? getRoleForEmail(email, adminEmails) : options.defaultRole ?? getRoleForEmail(email, adminEmails);
+  };
+
   return {
     async register({
       email,
@@ -86,7 +99,7 @@ export function createAuthService(prisma: AuthServicePrisma) {
         id: makeId('user'),
         email: normalizedEmail,
         passwordHash: await hashPassword(password),
-        role: getRoleForEmail(normalizedEmail),
+        role: resolveRole(normalizedEmail),
       };
 
       let createdUser: DbUserRecord;
@@ -120,7 +133,7 @@ export function createAuthService(prisma: AuthServicePrisma) {
       }
 
       let currentUser = user;
-      const currentRole = getRoleForEmail(currentUser.email);
+      const currentRole = resolveRole(currentUser.email);
       if (currentUser.role !== currentRole) {
         currentUser = await prisma.user.update({
           where: { id: currentUser.id },
@@ -144,7 +157,16 @@ export function createAuthService(prisma: AuthServicePrisma) {
         return null;
       }
 
-      return toPublicUser(session.user);
+      let currentUser = session.user;
+      const currentRole = resolveRole(currentUser.email);
+      if (currentUser.role !== currentRole) {
+        currentUser = await prisma.user.update({
+          where: { id: currentUser.id },
+          data: { role: currentRole },
+        });
+      }
+
+      return toPublicUser(currentUser);
     },
 
     async logout(token: string | null | undefined) {
@@ -232,6 +254,10 @@ function coerceRole(role: string): UserRole {
 
 function isUniqueConstraintError(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
+}
+
+function getLocalMemoryDefaultRole(): UserRole | undefined {
+  return process.env.NODE_ENV === 'production' ? undefined : 'admin';
 }
 
 function getMemoryAuthPrisma(): AuthServicePrisma {

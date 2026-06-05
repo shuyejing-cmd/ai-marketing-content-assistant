@@ -2,8 +2,8 @@ import type { GenerationResult } from '@/features/generation/generation-types';
 
 export function PosterPreview({ result }: { result: GenerationResult }) {
   const [headline, benefit, footer] = result.imageText;
-  const heroImage = result.generatedImageDataUrl ?? result.imageUrl ?? result.uploadedImageDataUrl;
   const generatedImage = result.generatedImageDataUrl ?? (isMockImageUrl(result.imageUrl) ? undefined : result.imageUrl);
+  const heroImage = generatedImage ?? result.uploadedImageDataUrl;
 
   if (generatedImage) {
     return (
