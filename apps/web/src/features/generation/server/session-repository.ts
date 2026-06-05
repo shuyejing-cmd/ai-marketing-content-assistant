@@ -42,6 +42,17 @@ const globalForSessions = globalThis as unknown as {
 };
 const memorySessions = (globalForSessions.generationMemorySessions ??= new Map<string, SessionRecord>());
 
+export function reassignMemorySessionOwner(previousOwnerId: string, nextOwnerId: string) {
+  let count = 0;
+  for (const [id, session] of memorySessions.entries()) {
+    if (session.ownerId === previousOwnerId) {
+      memorySessions.set(id, normalizeSessionRecord({ ...session, ownerId: nextOwnerId, updatedAt: new Date() }));
+      count += 1;
+    }
+  }
+  return count;
+}
+
 export function createSessionRepository(prisma: PrismaLike | null = getPrismaClient()) {
   const memory = prisma ? null : createMemorySessionDelegate();
   const session = (prisma?.session ?? memory) as SessionDelegate;

@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function generateMarketingResults(page: Page) {
-  await page.goto('/image');
+  await navigateWithReloadRetry(page, '/image');
   await page
     .getByPlaceholder('描述你想生成的营销图片...')
     .fill('给新品奶茶做一张朋友圈宣传图，突出第二杯半价');
@@ -22,11 +22,16 @@ async function generateMarketingResults(page: Page) {
 }
 
 async function registerUser(page: Page, email: string) {
-  await page.goto('/auth');
-  await page.getByRole('button', { name: /^注册$/ }).click();
+  await navigateWithReloadRetry(page, '/auth');
+  const submitButton = page.getByRole('button', { name: '注册并保留内容' });
+  for (let attempt = 0; attempt < 3 && !(await submitButton.isVisible().catch(() => false)); attempt += 1) {
+    await page.getByRole('button', { name: /^注册$/ }).click();
+    await page.waitForTimeout(100);
+  }
+  await expect(submitButton).toBeVisible();
   await page.getByLabel('邮箱').fill(email);
   await page.getByLabel('密码').fill('password123');
-  await page.getByRole('button', { name: '注册并保留内容' }).click();
+  await submitButton.click();
   await expect(page).toHaveURL('/');
 }
 
@@ -69,17 +74,14 @@ test('home page menu drawer opens template management entry', async ({ page }) =
 
 test('published image template opens a locked upload-only template flow', async ({ page, request }) => {
   const templateTitle = `中秋模板 ${Date.now()}`;
-  await authenticateAdmin(request);
-  const templateResponse = await request.post('/api/admin/templates', {
-    data: {
-      type: 'image',
-      title: templateTitle,
-      description: '上传商品图，生成中秋活动海报。',
-      coverImageDataUrl: tinyPngDataUrl,
-      prompt: '生成一张中秋营销海报，保留用户上传商品主体，画面温暖明亮。',
-      published: true,
-      sortOrder: -100,
-    },
+  const templateResponse = await createAdminTemplate(request, {
+    type: 'image',
+    title: templateTitle,
+    description: '上传商品图，生成中秋活动海报。',
+    coverImageDataUrl: tinyPngDataUrl,
+    prompt: '生成一张中秋营销海报，保留用户上传商品主体，画面温暖明亮。',
+    published: true,
+    sortOrder: -100,
   });
   expect(templateResponse.ok()).toBeTruthy();
   const template = (await templateResponse.json()) as { id: string };
@@ -107,17 +109,14 @@ test('published image template opens a locked upload-only template flow', async 
 
 test('video templates are listed as placeholders', async ({ page, request }) => {
   const templateTitle = `视频模板 ${Date.now()}`;
-  await authenticateAdmin(request);
-  const templateResponse = await request.post('/api/admin/templates', {
-    data: {
-      type: 'video',
-      title: templateTitle,
-      description: '视频模板占位。',
-      coverImageDataUrl: tinyPngDataUrl,
-      prompt: '视频模板第一版只做展示。',
-      published: true,
-      sortOrder: -100,
-    },
+  const templateResponse = await createAdminTemplate(request, {
+    type: 'video',
+    title: templateTitle,
+    description: '视频模板占位。',
+    coverImageDataUrl: tinyPngDataUrl,
+    prompt: '视频模板第一版只做展示。',
+    published: true,
+    sortOrder: -100,
   });
   expect(templateResponse.ok()).toBeTruthy();
 
@@ -215,18 +214,33 @@ async function authenticateAdmin(request: APIRequestContext) {
   expect(loginResponse.ok()).toBeTruthy();
 }
 
-async function createPublishedImageTemplate(request: APIRequestContext, title: string) {
+async function createAdminTemplate(
+  request: APIRequestContext,
+  data: {
+    type: 'image' | 'video';
+    title: string;
+    description: string;
+    coverImageDataUrl: string;
+    prompt: string;
+    published: boolean;
+    sortOrder: number;
+  },
+) {
   await authenticateAdmin(request);
-  const templateResponse = await request.post('/api/admin/templates', {
-    data: {
-      type: 'image',
-      title,
-      description: '上传商品图，生成活动海报。',
-      coverImageDataUrl: tinyPngDataUrl,
-      prompt: '生成一张营销海报，保留用户上传商品主体，画面干净明亮。',
-      published: true,
-      sortOrder: -100,
-    },
+  const response = await request.post('/api/admin/templates', { data });
+  await request.post('/api/auth/logout');
+  return response;
+}
+
+async function createPublishedImageTemplate(request: APIRequestContext, title: string) {
+  const templateResponse = await createAdminTemplate(request, {
+    type: 'image',
+    title,
+    description: '上传商品图，生成活动海报。',
+    coverImageDataUrl: tinyPngDataUrl,
+    prompt: '生成一张营销海报，保留用户上传商品主体，画面干净明亮。',
+    published: true,
+    sortOrder: -100,
   });
   expect(templateResponse.ok()).toBeTruthy();
   return (await templateResponse.json()) as { id: string };

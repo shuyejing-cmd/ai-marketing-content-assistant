@@ -21,6 +21,28 @@ const memoryTaskMeta = (globalForGenerationStore.generationMemoryTaskMeta ??= ne
 const memoryPromptLogs = (globalForGenerationStore.generationMemoryPromptLogs ??= []);
 const memoryImageAssets = (globalForGenerationStore.generationMemoryImageAssets ??= []);
 
+export function reassignMemoryTaskOwner(previousOwnerId: string, nextOwnerId: string) {
+  let count = 0;
+  for (const [taskId, meta] of memoryTaskMeta.entries()) {
+    if (meta.ownerId === previousOwnerId) {
+      memoryTaskMeta.set(taskId, { ...meta, ownerId: nextOwnerId });
+      count += 1;
+    }
+  }
+  return count;
+}
+
+export function reassignMemoryImageAssetOwner(previousOwnerId: string, nextOwnerId: string) {
+  let count = 0;
+  for (const asset of memoryImageAssets) {
+    if (asset.ownerId === previousOwnerId) {
+      asset.ownerId = nextOwnerId;
+      count += 1;
+    }
+  }
+  return count;
+}
+
 export function createGenerationStore(): GenerationStore {
   const prisma = getPrismaClient();
   if (!prisma) {

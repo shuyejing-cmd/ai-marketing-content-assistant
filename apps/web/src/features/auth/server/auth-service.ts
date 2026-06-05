@@ -3,7 +3,9 @@ import 'server-only';
 import { createHash, randomBytes } from 'node:crypto';
 
 import { makeId } from '../../generation/server/ids';
+import { reassignMemoryImageAssetOwner, reassignMemoryTaskOwner } from '../../generation/server/generation-store';
 import { getPrismaClient } from '../../generation/server/prisma';
+import { reassignMemorySessionOwner } from '../../generation/server/session-repository';
 import { hashPassword, verifyPassword } from './password';
 import type { AuthResult, PublicUser, UserRecord, UserRole } from './auth-types';
 import { getRoleForEmail, isAnonymousOwnerId, normalizeEmail, userOwnerId } from './owner';
@@ -55,13 +57,15 @@ type AuthServicePrisma = {
   };
 };
 
+const globalForMemoryAuth = globalThis as unknown as {
+  authMemoryPrisma?: AuthServicePrisma;
+  authMemoryUsers?: DbUserRecord[];
+  authMemorySessions?: AuthSessionRecord[];
+};
+
 export function getAuthService() {
   const prisma = getPrismaClient();
-  if (!prisma) {
-    throw new Error('DATABASE_URL is required for account features');
-  }
-
-  return createAuthService(prisma);
+  return createAuthService(prisma ?? getMemoryAuthPrisma());
 }
 
 export function createAuthService(prisma: AuthServicePrisma) {
@@ -228,4 +232,74 @@ function coerceRole(role: string): UserRole {
 
 function isUniqueConstraintError(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
+}
+
+function getMemoryAuthPrisma(): AuthServicePrisma {
+  if (globalForMemoryAuth.authMemoryPrisma) return globalForMemoryAuth.authMemoryPrisma;
+
+  const users = (globalForMemoryAuth.authMemoryUsers ??= []);
+  const authSessions = (globalForMemoryAuth.authMemorySessions ??= []);
+
+  globalForMemoryAuth.authMemoryPrisma = {
+    user: {
+      async create({ data }) {
+        if (users.some((user) => user.email === data.email)) {
+          throw { code: 'P2002' };
+        }
+        users.push(data);
+        return data;
+      },
+      async findUnique({ where }) {
+        return users.find((user) => user.email === where.email || user.id === where.id) ?? null;
+      },
+      async update({ where, data }) {
+        const user = users.find((entry) => entry.id === where.id);
+        if (!user) throw new Error('User not found');
+        Object.assign(user, data);
+        return user;
+      },
+    },
+    authSession: {
+      async create({ data, include }) {
+        const row = { ...data };
+        authSessions.push(row);
+        return include?.user ? { ...row, user: users.find((user) => user.id === row.userId) } : row;
+      },
+      async findUnique({ where, include }) {
+        const row = authSessions.find((session) => session.tokenHash === where.tokenHash) ?? null;
+        if (!row) return null;
+        return include?.user ? { ...row, user: users.find((user) => user.id === row.userId) } : row;
+      },
+      async deleteMany({ where }) {
+        const before = authSessions.length;
+        for (let index = authSessions.length - 1; index >= 0; index -= 1) {
+          const session = authSessions[index];
+          if (
+            (where.tokenHash && session.tokenHash === where.tokenHash) ||
+            (where.expiresAt?.lt && session.expiresAt < where.expiresAt.lt)
+          ) {
+            authSessions.splice(index, 1);
+          }
+        }
+        return { count: before - authSessions.length };
+      },
+    },
+    session: {
+      async updateMany({ where, data }) {
+        return { count: reassignMemorySessionOwner(where.ownerId, data.ownerId) };
+      },
+    },
+    generationTask: {
+      async updateMany({ where, data }) {
+        return { count: reassignMemoryTaskOwner(where.ownerId, data.ownerId) };
+      },
+    },
+    imageAsset: {
+      async updateMany({ where, data }) {
+        return { count: reassignMemoryImageAssetOwner(where.ownerId, data.ownerId) };
+      },
+    },
+  };
+
+  return globalForMemoryAuth.authMemoryPrisma;
 }

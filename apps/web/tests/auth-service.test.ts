@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 
-import { createAuthService } from '../src/features/auth/server/auth-service';
+import { createAuthService, getAuthService } from '../src/features/auth/server/auth-service';
+import { createGenerationStore } from '../src/features/generation/server/generation-store';
+import { createSessionRepository } from '../src/features/generation/server/session-repository';
 import {
   AUTH_COOKIE_NAME,
   clearAuthCookie,
@@ -126,9 +128,11 @@ function createPrismaMock({ withTransaction = false } = {}) {
 
 describe('auth service', () => {
   const originalAdminEmails = process.env.AUTH_ADMIN_EMAILS;
+  const originalDatabaseUrl = process.env.DATABASE_URL;
 
   afterEach(() => {
     process.env.AUTH_ADMIN_EMAILS = originalAdminEmails;
+    process.env.DATABASE_URL = originalDatabaseUrl;
   });
 
   it('registers with a normalized email, creates a raw session token, and binds anonymous rows', async () => {
@@ -266,6 +270,46 @@ describe('auth service', () => {
     await expect(service.register({ email: 'PERSON@example.com', password: 'password123' })).rejects.toThrow(
       '该邮箱已注册',
     );
+  });
+
+  it('uses an in-memory auth store when DATABASE_URL is not configured', async () => {
+    delete process.env.DATABASE_URL;
+    const anonymousOwnerId = `owner_memory_${Date.now()}`;
+    const service = getAuthService();
+    const sessions = createSessionRepository(null);
+    const generationStore = createGenerationStore();
+    const anonymousSession = await sessions.createSession(anonymousOwnerId);
+    const assetId = `asset_memory_${Date.now()}`;
+    await generationStore.saveImageAsset({
+      id: assetId,
+      ownerId: anonymousOwnerId,
+      kind: 'uploaded_image',
+      mimeType: 'image/png',
+      base64: Buffer.from('memory-asset').toString('base64'),
+    });
+
+    const registered = await service.register({
+      email: `memory-admin-${Date.now()}@example.com`,
+      password: 'password123',
+      anonymousOwnerId,
+    });
+    const login = await service.login({
+      email: registered.user.email,
+      password: 'password123',
+    });
+
+    expect(registered.user.role).toBe('user');
+    expect(login.user).toEqual(registered.user);
+    await expect(service.getUserBySessionToken(login.sessionToken)).resolves.toEqual(registered.user);
+    await expect(sessions.getSession(`user:${registered.user.id}`, anonymousSession.id)).resolves.toEqual(
+      expect.objectContaining({ id: anonymousSession.id, ownerId: `user:${registered.user.id}` }),
+    );
+    await expect(generationStore.getImageAsset(assetId)).resolves.toEqual(
+      expect.objectContaining({ id: assetId, ownerId: `user:${registered.user.id}` }),
+    );
+
+    await service.logout(login.sessionToken);
+    await expect(service.getUserBySessionToken(login.sessionToken)).resolves.toBeNull();
   });
 });
 
