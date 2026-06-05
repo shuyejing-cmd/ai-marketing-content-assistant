@@ -27,6 +27,15 @@ export async function getRequestOwner(request: Request): Promise<RequestOwner> {
   return { ownerId: isAnonymousOwnerId(anonymousOwnerId) ? anonymousOwnerId : 'anonymous', user: null };
 }
 
+export async function requireUser(request: Request): Promise<PublicUser | NextResponse> {
+  const user = await getCurrentUser(request);
+  if (!user) {
+    return NextResponse.json({ message: '请先登录' }, { status: 401 });
+  }
+
+  return user;
+}
+
 export async function requireAdmin(request: Request): Promise<PublicUser | NextResponse> {
   const user = await getCurrentUser(request);
   if (!user) {

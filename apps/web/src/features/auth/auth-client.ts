@@ -4,6 +4,10 @@ export type AuthUserResponse = {
   user: PublicUser | null;
 };
 
+type GetCurrentUserOptions = {
+  timeoutMs?: number;
+};
+
 type AuthSuccessResponse = {
   user: PublicUser;
 };
@@ -14,8 +18,31 @@ type AuthCredentials = {
   anonymousOwnerId?: string | null;
 };
 
-export async function getCurrentUser(): Promise<AuthUserResponse> {
-  return requestAuthUser('/api/auth/me', { cache: 'no-store' }, '读取账号失败');
+const DEFAULT_CURRENT_USER_TIMEOUT_MS = 8000;
+
+export async function getCurrentUser(options: GetCurrentUserOptions = {}): Promise<AuthUserResponse> {
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_CURRENT_USER_TIMEOUT_MS;
+
+  try {
+    return await Promise.race([
+      requestAuthUser('/api/auth/me', { cache: 'no-store', signal: controller.signal }, '读取账号失败'),
+      new Promise<AuthUserResponse>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          controller.abort();
+          reject(new Error('账号状态读取超时，请检查数据库连接或服务端配置'));
+        }, timeoutMs);
+      }),
+    ]);
+  } catch (error) {
+    if (controller.signal.aborted || isAbortError(error)) {
+      throw new Error('账号状态读取超时，请检查数据库连接或服务端配置');
+    }
+    throw error;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 export async function register(input: AuthCredentials): Promise<AuthSuccessResponse> {
@@ -112,4 +139,8 @@ function isPublicUser(user: unknown): user is PublicUser {
 
 function isLogoutResponse(body: unknown): body is { ok: true } {
   return typeof body === 'object' && body !== null && (body as { ok?: unknown }).ok === true;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === 'AbortError';
 }

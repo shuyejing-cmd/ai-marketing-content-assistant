@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireAdmin } from '@/features/auth/server/request-auth';
+import { requireUser } from '@/features/auth/server/request-auth';
 import { createTemplateRepository } from '@/features/templates/server/template-repository';
 import type { TemplateUpdateInput } from '@/features/templates/template-types';
 
@@ -8,8 +8,8 @@ type RouteContext = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const admin = await requireAdmin(request);
-  if (admin instanceof Response) return admin;
+  const user = await requireUser(request);
+  if (user instanceof Response) return user;
 
   const { id } = await context.params;
   const body = (await request.json().catch(() => ({}))) as TemplateUpdateInput;

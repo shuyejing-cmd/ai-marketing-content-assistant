@@ -4,7 +4,7 @@ import { POST as register } from '../src/app/api/auth/register/route';
 import { POST as login } from '../src/app/api/auth/login/route';
 import { POST as logout } from '../src/app/api/auth/logout/route';
 import { GET as me } from '../src/app/api/auth/me/route';
-import { getCurrentUser, getRequestOwner, requireAdmin } from '../src/features/auth/server/request-auth';
+import { getCurrentUser, getRequestOwner, requireAdmin, requireUser } from '../src/features/auth/server/request-auth';
 import { getAuthService } from '../src/features/auth/server/auth-service';
 import { AUTH_COOKIE_NAME } from '../src/features/auth/server/cookies';
 import type { PublicUser } from '../src/features/auth/server/auth-types';
@@ -338,6 +338,21 @@ describe('request auth helpers', () => {
     expect((regularUser as Response).status).toBe(403);
     expect(await (regularUser as Response).json()).toEqual({ message: '没有权限访问模板管理' });
     expect(adminUser).toEqual(admin);
+  });
+
+  it('requireUser returns 401 or the signed-in user', async () => {
+    const noUser = await requireUser(new Request('http://localhost/api/templates/manage'));
+    service.getUserBySessionToken.mockResolvedValueOnce(user);
+    const signedInUser = await requireUser(
+      new Request('http://localhost/api/templates/manage', {
+        headers: { cookie: authCookie('session_user') },
+      }),
+    );
+
+    expect(noUser).toBeInstanceOf(Response);
+    expect((noUser as Response).status).toBe(401);
+    expect(await (noUser as Response).json()).toEqual({ message: '请先登录' });
+    expect(signedInUser).toEqual(user);
   });
 
   it('getCurrentUser reads the auth cookie session token', async () => {

@@ -43,10 +43,10 @@ export function HomeMenuDrawer() {
       .then((response) => {
         if (!ignore) setUser(response.user);
       })
-      .catch(() => {
+      .catch((error) => {
         if (!ignore) {
           setUser(null);
-          setAuthError('账号状态读取失败');
+          setAuthError(error instanceof Error ? error.message : '账号状态读取失败，请检查数据库连接或服务端配置');
         }
       })
       .finally(() => {
@@ -116,7 +116,7 @@ export function HomeMenuDrawer() {
                 </div>
               </section>
 
-              {user?.role === 'admin' ? (
+              {user ? (
                 <section>
                   <h3 className="text-[13px] font-semibold text-muted">模板</h3>
                   <Link

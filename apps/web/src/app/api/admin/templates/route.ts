@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server';
-import { requireAdmin } from '@/features/auth/server/request-auth';
+import { requireUser } from '@/features/auth/server/request-auth';
 import { createTemplateRepository } from '@/features/templates/server/template-repository';
 import type { TemplateInput } from '@/features/templates/template-types';
 
 export async function GET(request: Request) {
-  const admin = await requireAdmin(request);
-  if (admin instanceof Response) return admin;
+  const user = await requireUser(request);
+  if (user instanceof Response) return user;
 
   return NextResponse.json(await createTemplateRepository().listAdminTemplates());
 }
 
 export async function POST(request: Request) {
-  const admin = await requireAdmin(request);
-  if (admin instanceof Response) return admin;
+  const user = await requireUser(request);
+  if (user instanceof Response) return user;
 
   const body = (await request.json().catch(() => ({}))) as Partial<TemplateInput>;
   if (!body.title || !body.coverImageDataUrl || !body.prompt) {

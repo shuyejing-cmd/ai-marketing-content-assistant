@@ -78,7 +78,17 @@ describe('auth client', () => {
     const response = await getCurrentUser();
 
     expect(response).toEqual({ user });
-    expect(fetcher).toHaveBeenCalledWith('/api/auth/me', { cache: 'no-store' });
+    expect(fetcher).toHaveBeenCalledWith('/api/auth/me', expect.objectContaining({
+      cache: 'no-store',
+      signal: expect.any(AbortSignal),
+    }));
+  });
+
+  it('times out when the current user request hangs', async () => {
+    const fetcher = vi.fn(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal('fetch', fetcher);
+
+    await expect(getCurrentUser({ timeoutMs: 1 })).rejects.toThrow('账号状态读取超时，请检查数据库连接或服务端配置');
   });
 
   it('accepts a signed-out current user response', async () => {
