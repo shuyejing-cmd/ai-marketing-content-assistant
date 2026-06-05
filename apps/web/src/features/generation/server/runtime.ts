@@ -26,6 +26,7 @@ function getGenerationRuntimeSignature() {
     apimartImageSize: process.env.APIMART_IMAGE_SIZE ?? '',
     apimartImageResolution: process.env.APIMART_IMAGE_RESOLUTION ?? '',
     apimartImageQuality: process.env.APIMART_IMAGE_QUALITY ?? '',
+    apimartProxyUrl: process.env.APIMART_PROXY_URL ?? '',
     appPublicBaseUrl: process.env.APP_PUBLIC_BASE_URL ?? '',
     tencentCosSecretId: fingerprintEnv('TENCENT_COS_SECRET_ID'),
     tencentCosSecretKey: fingerprintEnv('TENCENT_COS_SECRET_KEY'),

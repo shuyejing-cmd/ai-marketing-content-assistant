@@ -17,6 +17,11 @@ function errorJson(status: number, value: unknown) {
 }
 
 describe('APIMartImageProvider', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
   it('submits a GPT-Image-2 task, polls it, and returns the generated image URL', async () => {
     const fetcher = vi
       .fn()
@@ -141,6 +146,45 @@ describe('APIMartImageProvider', () => {
         image_urls: ['https://app.example.test/api/image-assets/asset_1'],
       }),
     );
+  });
+
+  it('uses the configured proxy for default server-side fetches', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(okJson({ code: 200, data: [{ task_id: 'task_proxy' }] }))
+      .mockResolvedValueOnce(
+        okJson({
+          code: 200,
+          data: {
+            id: 'task_proxy',
+            status: 'completed',
+            result: { images: [{ url: ['https://cdn.example.test/proxy.png'] }] },
+          },
+        }),
+      );
+    vi.stubGlobal('fetch', fetcher);
+    const provider = new APIMartImageProvider({
+      apiKey: 'apimart_key',
+      model: 'gpt-image-2-official',
+      proxyUrl: 'http://127.0.0.1:7897',
+      fetcher,
+      initialPollDelayMs: 0,
+      pollIntervalMs: 0,
+      timeoutMs: 1,
+      sleeper: async () => undefined,
+    });
+
+    await provider.generate({
+      prompt: '生成一张新品海报',
+      mode: 'text-to-image',
+    });
+
+    expect(fetcher.mock.calls[0][1]).toEqual(expect.objectContaining({
+      dispatcher: expect.any(Object),
+    }));
+    expect(fetcher.mock.calls[1][1]).toEqual(expect.objectContaining({
+      dispatcher: expect.any(Object),
+    }));
   });
 
   it('fails clearly when image-to-image has no public input image URL', async () => {

@@ -1,4 +1,5 @@
 import type { SeedreamGenerateInput, SeedreamGenerateOutput } from './seedream-provider';
+import { fetch as undiciFetch, ProxyAgent } from 'undici';
 
 type Fetcher = typeof fetch;
 type Sleeper = (ms: number) => Promise<void>;
@@ -10,6 +11,7 @@ type ProviderOptions = {
   size?: string;
   resolution?: string;
   quality?: string;
+  proxyUrl?: string;
   fetcher?: Fetcher;
   sleeper?: Sleeper;
   initialPollDelayMs?: number;
@@ -46,7 +48,7 @@ export class APIMartImageProvider {
     this.size = options.size ?? process.env.APIMART_IMAGE_SIZE ?? DEFAULT_SIZE;
     this.resolution = options.resolution ?? process.env.APIMART_IMAGE_RESOLUTION ?? DEFAULT_RESOLUTION;
     this.quality = options.quality ?? process.env.APIMART_IMAGE_QUALITY ?? DEFAULT_QUALITY;
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = createFetchWithProxy(options.fetcher, options.proxyUrl);
     this.sleeper = options.sleeper ?? sleep;
     this.initialPollDelayMs =
       options.initialPollDelayMs ?? readNumberEnv('APIMART_INITIAL_POLL_DELAY_MS', DEFAULT_INITIAL_POLL_DELAY_MS);
@@ -134,6 +136,27 @@ export class APIMartImageProvider {
       'Content-Type': 'application/json',
     };
   }
+}
+
+function createFetchWithProxy(fetcher?: Fetcher, proxyUrl = readProxyUrl()): Fetcher {
+  if (!proxyUrl) return fetcher ?? fetch;
+
+  const dispatcher = new ProxyAgent(proxyUrl);
+  const baseFetcher = fetcher ?? (undiciFetch as unknown as Fetcher);
+  return ((url, init) => baseFetcher(url, { ...init, dispatcher } as RequestInit & { dispatcher: unknown })) as Fetcher;
+}
+
+function readProxyUrl() {
+  return (
+    process.env.APIMART_PROXY_URL ||
+    process.env.HTTPS_PROXY ||
+    process.env.https_proxy ||
+    process.env.HTTP_PROXY ||
+    process.env.http_proxy ||
+    process.env.ALL_PROXY ||
+    process.env.all_proxy ||
+    ''
+  ).trim();
 }
 
 function extractTaskId(value: unknown) {
