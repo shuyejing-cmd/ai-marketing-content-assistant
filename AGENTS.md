@@ -1,7 +1,8 @@
 # AGENTS.md
 
-## 新会话优先阅读
-根目录下这 6 个文件是当前项目事实来源。新窗口不要一次性阅读整个代码库，先按顺序阅读：
+## 新会话阅读顺序
+
+根目录下这 6 个文件是当前项目事实来源。新会话不要一次性读取整个代码库，先按顺序阅读：
 
 1. `AGENTS.md`
 2. `CURRENT_STATUS.md`
@@ -10,63 +11,97 @@
 5. `PROJECT_BRIEF.md`
 6. `DECISIONS.md`
 
-需要历史背景时再读：
+需要了解历史设计和实施过程时，再按需读取 `docs/superpowers/specs/` 和 `docs/superpowers/plans/`。历史方案中的部分权限设计已被后续决策覆盖，当前事实以根目录 6 份文档、当前分支代码和最新测试结果为准。
 
-- `docs/superpowers/specs/`
-- `docs/superpowers/plans/`
+## 仓库与分支状态
 
-`docs/superpowers/` 是历史产品设计和实施计划，不等同于当前代码状态。当前事实以根目录 6 个文件和实际代码为准。
+- GitHub 仓库：`shuyejing-cmd/ai-marketing-content-assistant`
+- 当前工作树：`.worktrees/account-owner-migration`
+- 当前分支：`account-owner-migration`
+- 基础开发分支：`feature/local-mobile-mvp`
+- 目标主分支：`main`
+- 当前功能已在本地完成并提交，尚未合入 GitHub 主线。
+- 计划先合入 `feature/local-mobile-mvp`，再把完整 MVP 合入 `main`。
+
+不要把“本地已完成”误写为“GitHub 主线已上线”。
 
 ## 当前项目定位
-这是一个面向中小商家的 AI 营销内容助手。当前阶段重点是 `apps/web` 内的图片营销 MVP：
 
-- 自由图片生成：一句话需求 + 快捷选项 + 可选上传图。
-- 图片模板生成：管理员发布模板，用户只上传图片和填写活动信息。
-- 结果卡包含完整模型海报图、标题、发布文案、图片中文字建议、复制和下载。
-- 主页右上角已有 X App 风格菜单，当前入口包含模板创建/管理，后续可放个人账号等能力。
-- 下一阶段最重要任务是账号注册系统，让多个用户使用所有功能时数据互不干扰。
+这是一个面向中小商家的 AI 营销内容助手。当前已经跑通 `apps/web` 内的图片营销 MVP：
+
+- 自由图片生成：一句话需求、快捷选项、可选上传商品图。
+- 图片模板生成：登录用户创建模板，用户选择已发布模板生成内容。
+- 结果卡：模型原图、标题、发布文案、图片文字建议、复制、下载、重新生成和二次修改。
+- 账号系统：邮箱密码注册、登录、退出、登录态持久化。
+- 数据归属：注册或登录时自动绑定当前浏览器匿名 `ownerId` 数据。
+- 多用户隔离：服务端从登录 cookie 解析 owner，不信任前端伪造的账号 owner。
+- 真实模型链路：APIMart 图片模型、腾讯云 COS 图生图中转、火山方舟 Ark 文案模型。
 
 ## 当前技术栈
-- 应用：Next.js App Router、React、TypeScript、Tailwind CSS。
-- 后端落点：`apps/web` 的 Next.js API Routes。
-- 数据库：PostgreSQL + Prisma。
-- 图片模型：APIMart `gpt-image-2-official` 为当前主路径；旧 Seedream provider 保留用于回滚。
-- 图生图中转：腾讯云 COS，Bucket 私有，服务端上传输入图并生成短期签名 URL 给 APIMart。
-- 文案模型：火山方舟 Ark chat completions，通过 `VolcengineTextProvider` 服务端调用。
-- Prompt：`prompt-builder` 统一构建 `imagePrompt` 和 `copyPrompt`，并写入 `PromptLog`。
-- 模板：`Template` 表 + 公开模板 API + 管理 API + 图片模板使用页。
-- 会话：`Session.kind/templateId` 已区分自由会话和模板会话；浏览器只保存匿名 `ownerId` 和当前会话 key。
-- 下载：真实模型远程 `imageUrl` 通过 `/api/download-image` 代理下载；mock/无真实模型图才走 canvas fallback。
-- 测试：Vitest、Playwright mobile E2E。
 
-## 主要目录边界
-- `apps/web`：当前唯一运行应用。
+- Next.js App Router、React、TypeScript、Tailwind CSS。
+- Next.js API Routes 承载当前后端能力。
+- PostgreSQL + Prisma 保存用户、登录会话、生成数据、PromptLog 和模板。
+- APIMart `gpt-image-2-official` 是图片生成主路径。
+- 腾讯云 COS 私有 Bucket 提供图生图输入图短期签名 URL。
+- 火山方舟 Ark chat completions 生成结果卡文案。
+- Node `crypto.scrypt` 处理密码 hash。
+- HttpOnly cookie + 数据库 `AuthSession` 保持登录态。
+- Vitest、Playwright mobile E2E。
+
+## 关键目录
+
 - `apps/web/src/app`：页面和 API Routes。
-- `apps/web/src/app/image/page.tsx`：自由图片生成页。
-- `apps/web/src/app/templates/image/[id]`：图片模板使用页。
-- `apps/web/src/app/admin/templates`：最小模板管理页。
-- `apps/web/src/app/api/download-image`：远程模型图同源下载代理。
-- `apps/web/src/features/generation`：生成类型、Prompt、provider、服务、会话和数据存储。
-- `apps/web/src/features/templates`：模板类型、客户端、仓库和管理鉴权。
-- `apps/web/prisma`：Prisma schema 和迁移。
-- `docs/superpowers`：历史规格和历史实施计划。
-- `apps/api`：未来 NestJS 主后端方向，目前不要启用。
+- `apps/web/src/app/auth`：登录/注册页面。
+- `apps/web/src/app/image`：自由图片生成页面。
+- `apps/web/src/app/templates/image/[id]`：图片模板使用页面。
+- `apps/web/src/app/admin/templates`：模板创建/管理页面；路径保留，但权限是任意登录用户。
+- `apps/web/src/features/auth`：认证、密码、cookie、登录会话、owner 解析与匿名数据绑定。
+- `apps/web/src/features/generation`：Prompt、provider、生成服务、会话和持久化。
+- `apps/web/src/features/templates`：模板类型、客户端和仓库。
+- `apps/web/prisma`：schema 与 migrations。
+- `docs/superpowers`：历史规格和实施计划。
 
 ## 固定规则
-- 不泄露 `.env`、API key、COS 密钥、数据库密码、管理员口令或任何真实密钥。
-- 前端不得直接调用模型供应商；真实模型调用必须经过服务端 provider。
-- 普通用户 API 不返回模板内部 prompt。
-- 模板内部 prompt 只允许在管理页、服务端读取和 PromptLog 调试中出现。
-- PromptLog 可以记录最终 `imagePrompt` / `copyPrompt`，但不得保存 COS 私有签名 URL；只记录 bucket、region、object key、过期时间等安全摘要。
-- 上传图当前仍会保存到 PostgreSQL `ImageAsset.base64`，并在 APIMart 图生图时临时上传 COS。
-- 模型原图是当前主要展示和下载对象；canvas 模板只作 mock 或无真实生成图时的 fallback。
-- 商品一致性优先于画面惊艳：有上传图时不得随意改变包装、Logo、颜色和关键主体细节。
-- 不把模板模式替代自由生成模式；两条路径都要保留。
-- 视频模板第一版只做列表占位，不接真实视频生成。
-- 当前阶段继续使用 `apps/web` API Routes，不启动 NestJS，除非用户明确要求。
-- 代码改动要小步、可验证、贴合现有结构。
+
+- 不泄露 `.env`、`.env.local`、API Key、COS 密钥、数据库密码、cookie token 或代理凭据。
+- 真实配置只写入被 Git 忽略的本地环境文件；`.env.example` 只写变量名和安全示例。
+- 前端不得直接调用模型供应商。
+- 登录 cookie 保存原始随机 token；数据库只保存 token hash。
+- 业务 API 不信任 body/header 中伪造的 `user:*` owner。
+- 登录用户使用稳定 owner key：`user:<userId>`。
+- 匿名用户使用浏览器生成的 `owner_*`，注册或登录时自动迁移到账号 owner。
+- 所有登录用户都可访问模板创建/管理；`AUTH_ADMIN_EMAILS` 可赋予角色，但不控制模板入口。
+- 公开模板 API 不返回内部 prompt。
+- PromptLog 不保存完整 COS 签名 URL，只保存安全摘要。
+- 模型原图是主要展示和下载对象；canvas 只用于 mock 或 fallback。
+- 商品一致性优先于画面惊艳。
+- 自由生成和模板生成两条路径都要保留。
+- 当前继续使用 `apps/web` API Routes，不启动 NestJS。
+
+## 模型错误判断
+
+- `fetch failed`、连接超时：优先检查代理和网络。
+- APIMart 返回 `HTTP 400` 且包含 `rejected by the safety system`：上游安全审核拒绝，可能由提示词、参考图或二者组合触发，不是数据库断链。
+- `url.parse()` deprecation warning 是依赖警告，不是本次生成失败根因。
+- 图片 provider 失败会让任务失败；Ark 文案 provider 失败时图片仍可成功并使用 fallback 文案。
+
+## 本地环境
+
+真实配置使用 `apps/web/.env.local`，该文件必须保持 Git ignored。关键变量类别：
+
+- `DATABASE_URL`
+- `GENERATION_PROVIDER`
+- `APIMART_API_KEY`、`APIMART_BASE_URL`、`APIMART_IMAGE_MODEL`
+- `APIMART_PROXY_URL`
+- `TENCENT_COS_*`
+- `ARK_API_KEY`、`ARK_BASE_URL`、`ARK_TEXT_MODEL`
+- `AUTH_ADMIN_EMAILS`
+
+不要把任何真实值写进文档、测试或提交。
 
 ## 常用命令
+
 在 `apps/web` 目录执行：
 
 ```powershell
@@ -74,21 +109,21 @@ npm.cmd run dev
 npm.cmd test
 npm.cmd run build
 npm.cmd run e2e
-npm.cmd exec -- prisma migrate dev
-npm.cmd exec -- prisma generate
+npx.cmd prisma migrate deploy
+npx.cmd prisma generate
 ```
 
-如需跑覆盖模板管理的 E2E，临时在本机 shell 设置 `GENERATION_PROVIDER=mock` 和 `TEMPLATE_ADMIN_SECRET`，不要把口令写进文档或提交到仓库。
+E2E 优先使用 mock：
 
-本地手机访问开发服务：
-
-```text
-http://<电脑局域网 IPv4>:3000
+```powershell
+$env:GENERATION_PROVIDER='mock'; npm.cmd run e2e
 ```
 
-## 验证标准
-- 只改文档：检查文件存在、中文可读、路径准确、没有过期结论、没有敏感信息。
-- 改代码：至少运行 `npm.cmd test` 和 `npm.cmd run build`。
-- 改交互：还要运行 mock E2E。若 3000 已运行真实环境 dev server，先确认是否会复用真实模型服务。
-- 改 Prisma schema：运行 `npm.cmd exec -- prisma migrate dev` 或按实际需要运行 `prisma generate`。
-- 改真实模型链路：除了自动化测试，还要实机生成并查看服务端日志里的最终 prompt、图片输入摘要、文案模型输出是否真实生效。
+## 验证要求
+
+- 文档改动：检查中文、路径、分支状态、敏感信息和历史结论。
+- 代码改动：至少执行 `npm.cmd test` 和 `npm.cmd run build`。
+- 交互改动：增加 mock Playwright E2E。
+- Prisma 改动：验证 migration 和 Prisma client。
+- 真实模型改动：除自动化测试外，还要实机检查 provider 日志。
+- 完成模块后：更新事实文档、本地提交、推送功能分支，并通过 PR 合入目标分支。

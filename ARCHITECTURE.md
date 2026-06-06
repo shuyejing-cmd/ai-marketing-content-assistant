@@ -1,95 +1,160 @@
 # ARCHITECTURE.md
 
 ## 当前运行架构
-当前实际运行架构是 `apps/web` 单体 Next.js 应用：
+
+当前是 `apps/web` 单体 Next.js 应用：
 
 ```text
-apps/web
-  Next.js App Router
-  React UI components
-  Next.js API Routes
-  Prisma + PostgreSQL
-  Fire-and-wait generation service
-  APIMart image provider
-  Tencent COS input image bridge
-  Ark text copy provider
-  Prompt builder + PromptLog
-  Template repository/API
-  Session scope: free/template
-  Direct model-image download proxy
+Browser
+  -> Next.js pages/components
+  -> Next.js API Routes
+       -> Auth service
+       -> Generation service
+       -> Template repository
+       -> Prisma/PostgreSQL
+       -> APIMart image provider
+       -> Tencent COS
+       -> Ark text provider
 ```
 
-`apps/api` / NestJS 目前未启用。
+`apps/api` / NestJS 尚未启用。
 
-## 关键模块
-- 页面层：`src/app/page.tsx`、`src/app/image/page.tsx`、`src/app/templates/image/[id]`、`src/app/admin/templates`。
-- API 层：`src/app/api/generation-tasks`、`src/app/api/generation-sessions`、`src/app/api/templates`、`src/app/api/admin/templates`、`src/app/api/download-image`、`src/app/api/dev/run-logs`。
-- 生成领域：`src/features/generation`。
-- 模板领域：`src/features/templates`。
-- 数据库：`prisma/schema.prisma`。
-- 下载能力：`src/lib/download.ts`。
+## 认证与 owner 架构
 
-## 数据库模型
-Prisma 当前模型：
+### 数据模型
+
+```text
+User
+  id
+  email
+  passwordHash
+  role
+  -> AuthSession[]
+
+AuthSession
+  userId
+  tokenHash
+  expiresAt
+```
+
+### 登录流程
+
+```text
+浏览器提交 email/password/anonymousOwnerId
+  -> /api/auth/register 或 /api/auth/login
+  -> scrypt 创建或校验 passwordHash
+  -> 创建随机 session token
+  -> 数据库只保存 tokenHash
+  -> 浏览器接收 HttpOnly cookie
+  -> 把 owner_* 业务数据迁移到 user:<userId>
+```
+
+### 请求归属
+
+```text
+请求携带有效登录 cookie
+  -> getCurrentUser()
+  -> ownerId = user:<userId>
+
+无有效登录 cookie
+  -> 校验 x-owner-id 只能是 owner_*
+  -> ownerId = owner_* 或 anonymous
+```
+
+业务 API 不接受客户端伪造的 `user:*` owner，也不再以 body.ownerId 决定账号身份。
+
+### 登录态恢复
+
+`/api/auth/me` 从 cookie 读取原始 token，hash 后查询 `AuthSession` 和 `User`。数据库和 migration 正常时，刷新浏览器或重启 Next.js 服务都不会让账号失效。
+
+客户端读取账号状态有 8 秒超时。超时或服务端失败时退出 loading 状态并显示数据库或服务端配置错误。
+
+## 业务数据模型
 
 ```text
 Session
+  -> GenerationTask[]
+
 GenerationTask
-GenerationResult
-ImageAsset
-PromptLog
+  -> GenerationResult[]
+  -> ImageAsset[]
+  -> PromptLog[]
+
 Template
+User
+AuthSession
 ```
 
-当前事实存储是 PostgreSQL。浏览器 localStorage 只保存匿名 `ownerId` 和当前会话 id/key，不保存完整历史事实。
+第一版账号迁移保留现有 `ownerId` 列：
 
-`Session` 已包含：
+- 匿名 owner：`owner_*`
+- 登录 owner：`user:<userId>`
 
-- `kind`: `free` 或 `template`
-- `templateId`: 模板会话所属模板
+## 自由图片生成
 
-下一阶段会新增正式账号模型，让 `User` 接管数据归属，逐步替代匿名 `ownerId`。
-
-## 自由图片生成数据流
 ```text
-用户输入/上传图片/选择渠道场景风格/填写活动信息
-  -> /api/generation-tasks
-  -> generation-service
-  -> prompt-builder 构建 imagePrompt + copyPrompt
-  -> 如有上传图且使用 APIMart：ImageAsset -> COS -> 私有签名 URL
-  -> APIMart provider 生成完整海报图
-  -> Ark text provider 生成标题、发布文案、图片中文字
-  -> 保存 Session / GenerationTask / GenerationResult / ImageAsset / PromptLog
-  -> 前端 ResultCard 展示模型原图和文案
-  -> 下载优先下载模型原图
+用户输入、快捷选项、可选上传图
+  -> POST /api/generation-tasks
+  -> 服务端解析 owner
+  -> prompt-builder 生成 imagePrompt/copyPrompt
+  -> 上传图保存为 ImageAsset
+  -> APIMart 图生图：ImageAsset -> COS -> 短期签名 URL
+  -> APIMartImageProvider
+  -> VolcengineTextProvider
+  -> 保存任务、结果、PromptLog
+  -> ResultCard 展示模型原图和文案
 ```
 
-## 模板图片生成数据流
+## 模板图片生成
+
 ```text
-用户点击首页图片模板
+公开模板列表
   -> /templates/image/[id]
-  -> 用户上传图片、填写活动信息
-  -> /api/templates/[id]/generation-tasks
+  -> 用户上传图和填写活动信息
+  -> POST /api/templates/[id]/generation-tasks
   -> 服务端读取 Template.prompt
-  -> prompt-builder 注入模板内部 prompt
-  -> 复用普通生成链路
-  -> 仅恢复当前模板自己的模板会话历史
+  -> 注入统一 prompt-builder
+  -> 复用生成主链路
 ```
 
-模板内部 prompt 不从公开模板 API 返回，也不由前端提交。
+公开模板 API 不返回内部 prompt。
 
-## Provider 边界
-- 图片 provider 当前主路径：`APIMartImageProvider`，模型为 `gpt-image-2-official`。
-- 旧图片 provider：`VolcengineSeedreamProvider`，保留为回滚路径。
-- 文案 provider：`VolcengineTextProvider`，调用 Ark chat completions。
-- `GENERATION_PROVIDER=mock` 用于测试和 E2E，避免真实模型费用。
-- 文案 provider 失败不会阻断图片结果；任务仍可成功并使用 fallback 文案。
-- 图片 provider 失败会让生成任务失败。
+## 模板创建权限
 
-## APIMart + COS 图生图边界
-APIMart 图生图通过 `image_urls` 读取输入图，因此本地上传图需要先变成 APIMart 可访问的 URL。
+- `/admin/templates` 路径暂时保留。
+- 页面入口只向登录用户显示。
+- 管理 API 使用 `requireUser`。
+- 所有登录用户当前都可创建和更新模板。
+- `AUTH_ADMIN_EMAILS` 会给匹配邮箱赋予 `admin` 角色，但模板权限暂不区分角色。
 
-当前实现：
+后续增加模板作者归属后，再收紧为“用户管理自己的模板，管理员管理全部模板”。
+
+## APIMart provider
+
+```text
+APIMartImageProvider
+  -> submit generation
+  -> poll task
+  -> return remote image URL
+```
+
+代理优先级：
+
+1. `APIMART_PROXY_URL`
+2. `HTTPS_PROXY` / `https_proxy`
+3. `HTTP_PROXY` / `http_proxy`
+4. `ALL_PROXY` / `all_proxy`
+
+配置代理时使用 `undici.fetch` + `ProxyAgent`，因为 Node 内置 fetch 不会自动遵循 Windows 系统代理。
+
+错误边界：
+
+- 网络连接失败：provider fetch error。
+- 上游安全审核：APIMart `HTTP 400`，消息包含 safety rejection。
+- 图片 provider 失败：任务失败。
+- 文案 provider 失败：图片任务仍成功，使用 fallback 文案。
+
+## COS 图生图中转
 
 ```text
 uploadedImageDataUrl
@@ -99,84 +164,33 @@ uploadedImageDataUrl
   -> APIMart image_urls
 ```
 
-规则：
+- Bucket 保持私有。
+- 签名 URL 只短期有效。
+- PromptLog 不保存完整签名 URL。
+- 长期仍需把 `ImageAsset.base64` 迁移为对象存储 key。
 
-- COS Bucket 保持私有。
-- 服务端上传对象并生成短期签名 URL。
-- PromptLog 不保存完整签名 URL，只保存安全摘要。
-- `APP_PUBLIC_BASE_URL` 仅作为旧 fallback。
-- `ImageAsset` 仍保存 base64，长期迁移到对象存储是后续 P1。
-
-## 下载数据流
-真实模型图是主要下载对象。
+## 下载
 
 ```text
-generatedImageDataUrl
-  -> 直接触发浏览器下载
-
 remote imageUrl
-  -> /api/download-image?url=...
-  -> 服务端 fetch 远程图
-  -> attachment 响应下载
-
-mock 或无真实模型图
-  -> canvas fallback
+  -> /api/download-image
+  -> 服务端 fetch
+  -> attachment response
 ```
 
-不要重新把真实模型图套入本地海报模板。
+只有 mock 或没有真实模型图时才使用 canvas fallback。
 
-## Prompt 管理
-- `prompt-builder` 是当前统一入口。
-- `imagePrompt` 发给图片模型。
-- `copyPrompt` 发给文案模型。
-- 有上传图时，prompt 强制强调商品一致性。
-- 无上传图时，prompt 明确生成氛围型营销图，不暗示真实商品。
-- 模板模式下，服务端读取模板内部 prompt 并注入生成链路。
-- PromptLog 保存最终 prompt、版本、provider request/response 摘要和错误信息。
+## 配置边界
 
-## 模板系统边界
-- `Template` 表保存图片/视频模板、封面、描述、内部 prompt、发布状态和排序。
-- 公开模板 API 只返回标题、描述、封面、类型、发布状态，不返回 prompt。
-- 管理 API 当前使用 `TEMPLATE_ADMIN_SECRET` 保护。
-- 图片模板可真实生成。
-- 视频模板第一版只做占位展示。
-- 下一阶段账号系统会把模板管理权限迁移到 `admin` 角色。
+- `.env.local`：真实本地配置，Git ignored。
+- `.env.example`：变量名和安全示例，可提交。
+- Prisma migration：可提交。
+- 数据库密码、API Key、COS Secret、代理认证信息：禁止提交。
 
-## 日志和调试
-- `/api/dev/run-logs` 接收开发期前端调试事件。
-- 服务端终端日志会显示上传图摘要、选项变化、生成提交、最终 prompt、provider 请求摘要和结果。
-- 图片 base64 不完整打印到终端，只打印 mime、估算大小、长度和短 hash。
-- 不打印 API key、token、password、数据库密码、COS SecretKey 或完整 COS 签名 URL。
+## 未来演进
 
-## 下一阶段账号边界
-当前匿名 `ownerId` 只是临时隔离方案。账号系统上线后：
-
-- 服务端从 session/cookie 解析当前 `User`。
-- API 不再信任前端传来的 owner 身份。
-- 现有匿名数据需要迁移或明确放弃。
-- Session、GenerationTask、ImageAsset、PromptLog、Template 管理行为都要纳入用户/角色边界。
-
-## 未来目标架构
-长期方向仍是：
-
-```text
-NestJS 主后端
-  用户、商家、会话、任务、模板、素材、积分、订单、结果事件
-
-AI Provider Adapter
-  统一模型调用协议
-
-BullMQ + Redis
-  异步任务队列、缓存、限流、任务状态
-
-PostgreSQL
-  长期业务事实来源
-
-对象存储
-  图片、视频、素材资产
-
-FastAPI AI 执行服务
-  后期承载复杂 AI 工作流、图像处理、多模态和视频执行
-```
-
-当前阶段先把 `apps/web` 内图片 MVP 和账号隔离跑稳，再决定迁移时机。
+- ImageAsset 全量对象存储。
+- Template 作者和版本模型。
+- NestJS 主后端。
+- BullMQ/Redis 异步任务。
+- FastAPI AI 执行服务。

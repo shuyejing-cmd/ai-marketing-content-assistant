@@ -1,18 +1,19 @@
-# Current Implementation Addendum
+# 当前实施补充（2026-06-06）
 
-This is a historical product design spec. It remains useful for product intent, but it is not the current implementation state.
+本文是历史产品设计，仍可用于理解产品方向，但不代表当前代码状态。
 
-Current implementation facts:
+当前实现事实：
 
-- The working app is `apps/web`, not a separate NestJS backend.
-- The image MVP now uses APIMart `gpt-image-2-official`.
-- Uploaded images for APIMart image-to-image are bridged through private Tencent COS signed URLs.
-- Copywriting uses the Ark text provider.
-- Free sessions and template sessions are already separated by `Session.kind/templateId`.
-- Direct model-image download is implemented through `/api/download-image`.
-- The next P0 task is email/password account registration and multi-user data isolation.
+- 可运行应用是 `apps/web`，没有启用独立 NestJS 后端。
+- 图片 MVP 使用 APIMart `gpt-image-2-official`。
+- 上传图通过腾讯云 COS 私有签名 URL 传给 APIMart。
+- 文案使用 Ark provider。
+- 自由会话和模板会话已通过 `Session.kind/templateId` 隔离。
+- 模型原图通过 `/api/download-image` 下载。
+- 邮箱密码账号、数据库登录会话、匿名数据绑定和多用户隔离已经完成。
+- 所有登录用户当前都可创建和管理模板。
 
-For current facts, read the root context files first: `AGENTS.md`, `CURRENT_STATUS.md`, `NEXT_TASKS.md`, `ARCHITECTURE.md`, `PROJECT_BRIEF.md`, and `DECISIONS.md`.
+当前事实请优先读取根目录 6 份交接文档。
 
 ---
 

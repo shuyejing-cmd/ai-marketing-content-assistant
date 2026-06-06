@@ -1,10 +1,10 @@
-# Status Note
+# 历史状态说明（2026-06-06）
 
-Status: Completed / superseded by the current `apps/web` implementation.
+状态：已完成，并被当前 `apps/web` 实现继续扩展。
 
-This historical plan describes the first local mobile H5 mock MVP. The current product has moved beyond this plan: `apps/web` now includes PostgreSQL + Prisma persistence, APIMart `gpt-image-2-official`, Tencent COS upload-image bridging, Ark text copy generation, template management, free/template session isolation, and direct model-image download.
+本文描述最初的本地移动 H5 mock MVP。当前产品已经加入 PostgreSQL + Prisma、APIMart `gpt-image-2-official`、腾讯云 COS 图生图中转、Ark 文案、模板、账号、匿名数据绑定和多用户隔离。
 
-For current facts, read the root context files first: `AGENTS.md`, `CURRENT_STATUS.md`, `NEXT_TASKS.md`, `ARCHITECTURE.md`, `PROJECT_BRIEF.md`, and `DECISIONS.md`.
+本文保留原始步骤用于追溯，不代表当前待办。当前事实请优先读取根目录 `AGENTS.md`、`CURRENT_STATUS.md`、`NEXT_TASKS.md`、`ARCHITECTURE.md`、`PROJECT_BRIEF.md` 和 `DECISIONS.md`。
 
 ---
 

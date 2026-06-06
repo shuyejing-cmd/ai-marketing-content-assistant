@@ -1,57 +1,63 @@
 # CURRENT_STATUS.md
 
-## 当前分支
-`feature/local-mobile-mvp`
+## 当前状态摘要
 
-## 当前阶段
-项目已经从本地 mock H5 进入 `apps/web` 内的真实模型图片营销 MVP 阶段。
+图片营销 MVP、账号系统和真实模型链路修复已经在本地分支 `account-owner-migration` 完成并提交。当前尚未合入 GitHub 的 `feature/local-mobile-mvp` 和 `main`。
 
-当前已完成：
+最近验证：
 
-- PostgreSQL + Prisma 持久化。
-- 自由图片生成页 `/image`。
-- 图片模板管理页 `/admin/templates`。
-- 图片模板使用页 `/templates/image/[id]`。
-- 主页右上角菜单和模板创建/管理入口。
-- 自由会话和模板会话隔离，同一个模板会恢复自己的最近会话。
-- APIMart `gpt-image-2-official` 图片生成接入。
-- 腾讯云 COS 作为 APIMart 上传图中转，使用私有签名 URL。
-- 火山方舟 Ark 文案模型接入，并修复 Ark base URL 配置和错误解析。
-- 远程模型图通过 `/api/download-image` 代理下载原图，避免回到旧 canvas 模板。
-- PromptLog、服务端生成日志、前端调试日志基础可用。
+- Vitest：32 个测试文件、165 条测试通过。
+- Next.js 生产构建：通过。
+- Playwright mobile mock E2E：14 条全部通过。
+- Prisma migration 已在本地 PostgreSQL 部署。
+- 注册后刷新、重启开发服务后恢复登录态已验证。
+- APIMart 经本机 HTTP 代理连通已验证。
+- 真实图生图请求已进入 APIMart，并收到上游安全审核 `HTTP 400`，说明 API、代理和 COS 链路已打通。
 
-当前仍不是完整 SaaS 产品。尚未完成账号、正式多用户权限、支付、积分、订单、模板市场和真实视频生成。
+## 已完成能力
 
-## 当前可用入口
-- `/`：首页，包含文案、图片、视频三入口，图片/视频模板列表，以及右上角菜单。
-- `/image`：自由图片生成页。
-- `/templates/image/[id]`：图片模板使用页，只允许上传图和填写活动信息。
-- `/admin/templates`：模板管理页，当前仍使用 `TEMPLATE_ADMIN_SECRET` 保护。
-- `/api/download-image`：远程模型图同源下载代理。
+### 图片营销
 
-## 当前已完成能力
-- 图片生成页面采用类聊天形态，底部输入框加快捷按钮。
-- 快捷按钮包含上传图片、发布渠道、营销场景、风格模板、活动信息。
-- 上传图后有缩略图和状态反馈，发送后清空输入和上传状态。
-- 会话列表支持创建、切换、重命名、删除；删除最后一个会话后自动创建新空会话。
-- `Session.kind` 支持 `free` / `template`，`Session.templateId` 用于模板会话隔离。
-- `GET /api/generation-sessions?kind=free` 只返回自由会话。
-- `GET /api/generation-sessions?templateId=...` 只返回对应模板会话。
-- `POST /api/generation-tasks` 可创建自由生成任务。
-- `POST /api/templates/[id]/generation-tasks` 可创建模板生成任务，服务端读取 `Template.prompt`。
-- `POST /api/generation-tasks/:id/regenerate` 可重新生成。
-- `POST /api/generation-tasks/:id/modify` 可二次修改自由生成结果。
-- APIMart provider 提交任务、轮询任务并读取远程生成图 URL。
-- APIMart 图生图时优先上传输入图到 COS，传短期签名 URL 给 `image_urls`。
-- 旧 `APP_PUBLIC_BASE_URL` 本地公开接口保留为 fallback。
-- Ark text provider 生成结果卡 `title`、`publishingCopy`、`imageText`；失败时图片任务仍可成功并使用 fallback 文案。
-- 结果预览优先显示模型原图，不再把模型图套进本地海报模板。
-- 下载优先下载模型原图；mock/无模型图时才使用 canvas fallback。
+- `/image` 自由图片生成。
+- `/templates/image/[id]` 图片模板生成。
+- 会话创建、切换、重命名、删除和恢复。
+- 自由会话与模板会话隔离。
+- APIMart `gpt-image-2-official` 文生图和图生图。
+- 腾讯云 COS 私有对象中转上传图。
+- Ark 文案生成 `title`、`publishingCopy`、`imageText`。
+- 模型原图预览和 `/api/download-image` 代理下载。
+- PromptLog 和结构化生成日志。
+
+### 账号与数据隔离
+
+- `/auth` 邮箱密码注册和登录。
+- 退出登录。
+- `User`、`AuthSession` Prisma 模型及 migration。
+- 密码使用 `scrypt` hash，不保存明文。
+- session token 仅以 hash 形式入库。
+- HttpOnly cookie 保持登录态。
+- 注册或登录时自动把当前浏览器匿名 owner 数据迁移到 `user:<userId>`。
+- 服务端统一解析请求 owner。
+- 生成会话、任务读取、重新生成和二次修改均校验 owner。
+- 两个登录用户的数据隔离有单测和 E2E 覆盖。
+- `/api/auth/me` 客户端有 8 秒超时，数据库异常时不再永久显示“账号状态读取中”。
+
+### 模板权限
+
+- 未登录用户不能进入模板创建/管理 API。
+- 所有已登录用户都能看到并使用“模板创建/管理”入口。
+- `/api/admin/templates` 路径名称暂时保留，但实际权限是 `requireUser`。
+- `AUTH_ADMIN_EMAILS` 只决定账号角色，不控制模板创建权限。
 - 公开模板 API 不返回内部 prompt。
-- 视频模板第一版只做列表占位，显示“即将开放”。
+
+### APIMart 网络
+
+- provider 支持 `APIMART_PROXY_URL`。
+- 也可读取标准 `HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY` 环境变量。
+- 使用 `undici.fetch` 和 `ProxyAgent` 通过代理访问 APIMart。
+- 当前本机环境使用被忽略的 `.env.local` 配置代理。
 
 ## 当前数据库模型
-Prisma 当前包含：
 
 - `Session`
 - `GenerationTask`
@@ -59,51 +65,33 @@ Prisma 当前包含：
 - `ImageAsset`
 - `PromptLog`
 - `Template`
+- `User`
+- `AuthSession`
 
-重要现状：
+业务数据第一版仍使用字符串 `ownerId`：
 
-- `Session` 已有 `kind` 和 `templateId`。
-- `GenerationTask` / `Session` 仍以匿名 `ownerId` 隔离。
-- 尚无 `User`、`Account`、`PasswordCredential` 或正式账号模型。
-- 上传图仍会以 base64 形式保存到 `ImageAsset`，COS 当前只作为 APIMart 图生图临时中转。
+- 匿名：`owner_*`
+- 登录账号：`user:<userId>`
 
-## 当前环境变量类别
-`.env.example` 描述当前需要的变量名：
+这是兼容式迁移方案，尚未把所有业务表改为显式 `userId` 外键。
 
-- 数据库：`DATABASE_URL`
-- 图片生成：`GENERATION_PROVIDER`、`APIMART_API_KEY`、`APIMART_BASE_URL`、`APIMART_IMAGE_MODEL`、`APIMART_IMAGE_SIZE`、`APIMART_IMAGE_RESOLUTION`、`APIMART_IMAGE_QUALITY`
-- COS 中转：`TENCENT_COS_SECRET_ID`、`TENCENT_COS_SECRET_KEY`、`TENCENT_COS_BUCKET`、`TENCENT_COS_REGION`、`TENCENT_COS_UPLOAD_PREFIX`、`TENCENT_COS_SIGNED_URL_TTL_SECONDS`
-- 文案模型：`ARK_API_KEY`、`ARK_BASE_URL`、`ARK_TEXT_MODEL`
-- 模板管理：`TEMPLATE_ADMIN_SECRET`
-- 兼容 fallback：`APP_PUBLIC_BASE_URL`、`ARK_IMAGE_MODEL`
+## 当前已知限制
 
-真实值只允许存在本地 `.env`，不要写入文档、测试输出或对话。
+- 图片仍以 base64 长期保存在 PostgreSQL，可能造成数据库膨胀。
+- 最近一次上传测试图片约 37.8 MB，后续应增加客户端压缩和服务端大小限制。
+- APIMart 安全审核拒绝目前作为通用 provider 失败返回，前端还没有专门提示。
+- `url.parse()` 依赖弃用警告尚未定位到具体第三方调用方。
+- 未实现邮箱验证、找回密码、OAuth、支付、积分、订单、团队和模板市场。
+- 视频入口仍是占位，不接真实视频生成。
+- NestJS 尚未启用。
 
-## 最近验证结果
-最近完成 APIMart、COS、下载代理、Ark 文案错误解析后已验证：
+## Git 状态
 
-```powershell
-npm.cmd test
-npm.cmd run build
-```
+- `account-owner-migration`：本地已提交，准备推送并创建 PR。
+- `feature/local-mobile-mvp`：本地比 GitHub 远端领先 2 个提交。
+- 主工作区显示的 86 个未提交路径，已确认与 `ab8e118` 基线快照完全一致。
+- GitHub 当前已知远端只有 `main` 和 `feature/local-mobile-mvp`；推送前必须再次确认。
 
-记录结果：
+## 下一步
 
-- Vitest：25 个测试文件、70 个测试通过。
-- Next build：通过。
-- mock Playwright E2E 最近一次完整运行 13 条通过；如果 3000 端口正运行真实环境 dev server，E2E 可能复用真实模型服务，运行前要先确认。
-
-真实模型链路每次改动后仍需实机复验，重点看服务端日志里的 `generation.provider.request`、`generation.provider.success`、`generation.copy_provider.success`、COS 输入图摘要和最终 prompt。
-
-## 当前未完成
-- 没有账号注册/登录系统。
-- 没有正式多用户权限；当前只是匿名 `ownerId` 隔离。
-- 没有用户角色和管理员账号。
-- 模板管理仍靠 `TEMPLATE_ADMIN_SECRET`。
-- 没有匿名数据迁移到注册账号的流程。
-- 没有支付、积分、订单。
-- 没有正式模板市场。
-- 没有真实视频生成。
-- 文案入口和视频入口仍不是完整生产功能。
-- 图片资产长期对象存储迁移尚未完成；COS 当前只是 APIMart 输入图中转。
-- NestJS 主后端尚未启用，当前继续使用 `apps/web` API Routes。
+先完成中文交接文档和 GitHub 两级 PR，再继续产品功能。不要在 Git 整合完成前删除主工作区文件、账号工作树或本地分支。
