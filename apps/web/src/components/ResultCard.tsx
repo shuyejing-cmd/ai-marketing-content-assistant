@@ -12,10 +12,12 @@ type DownloadState = 'idle' | 'downloading' | 'failed';
 type ResultCardProps = {
   result: GenerationResult;
   onRegenerate: () => void;
-  onModify: (resultId: string) => void;
+  onModify?: (resultId: string) => void;
+  modifyDisabled?: boolean;
+  modifyLabel?: string;
 };
 
-export function ResultCard({ result, onRegenerate, onModify }: ResultCardProps) {
+export function ResultCard({ result, onRegenerate, onModify, modifyDisabled, modifyLabel }: ResultCardProps) {
   const [copyState, setCopyState] = useState<CopyState>('idle');
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
 
@@ -74,11 +76,12 @@ export function ResultCard({ result, onRegenerate, onModify }: ResultCardProps) 
         </button>
         <button
           type="button"
-          onClick={() => onModify(result.id)}
-          className="flex h-10 items-center justify-center gap-1 rounded-lg bg-accent text-[13px] text-white"
+          onClick={() => onModify?.(result.id)}
+          disabled={modifyDisabled || !onModify}
+          className="flex h-10 items-center justify-center gap-1 rounded-lg bg-accent text-[13px] text-white disabled:bg-line disabled:text-muted"
         >
           <Wand2 size={15} aria-hidden="true" />
-          二次修改
+          {modifyLabel ?? '二次修改'}
         </button>
       </div>
 

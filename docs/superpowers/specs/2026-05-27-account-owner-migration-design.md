@@ -1,3 +1,13 @@
+# 实施状态与最终偏差（2026-06-06）
+
+本文设计已经在本地分支 `account-owner-migration` 实施完成，包含邮箱密码账号、数据库登录会话、匿名 owner 自动绑定和多用户数据隔离。
+
+最终产品权限与原方案有一项重要差异：**所有登录用户都可以创建和管理模板，不再要求 `admin` 角色。** `/api/admin/templates` 路径暂时保留，但使用 `requireUser`；`AUTH_ADMIN_EMAILS` 只决定账号角色。
+
+以下正文保留为历史设计过程。当前事实以根目录 `CURRENT_STATUS.md`、`ARCHITECTURE.md` 和 `DECISIONS.md` 为准。
+
+---
+
 # 账号注册与匿名数据绑定设计
 
 ## 背景

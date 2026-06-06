@@ -1,3 +1,15 @@
+# 实施结果与最终偏差（2026-06-06）
+
+本计划已经在本地分支 `account-owner-migration` 实施完成并通过测试与构建，尚未合入 GitHub 主线。
+
+最终实现包括邮箱密码注册/登录/退出、数据库 `AuthSession`、HttpOnly cookie、匿名 owner 自动绑定、服务端 owner 解析、多用户隔离、登录状态超时提示以及真实 PostgreSQL migration。
+
+计划中的“只有 admin 可以管理模板”已被后续产品决策覆盖：**当前所有登录用户都可以看到并使用模板创建/管理入口，模板管理 API 使用 `requireUser`；`AUTH_ADMIN_EMAILS` 只保留角色赋值能力。**
+
+以下内容保留为历史实施过程，不应覆盖根目录当前事实文档。
+
+---
+
 # Account Owner Migration Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

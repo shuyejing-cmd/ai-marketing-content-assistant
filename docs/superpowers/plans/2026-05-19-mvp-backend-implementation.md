@@ -1,3 +1,15 @@
+# 历史状态说明（2026-06-06）
+
+状态：延期。
+
+本文描述 NestJS MVP 后端方案。NestJS 仍是长期方向，但当前没有启用；可运行产品继续位于 `apps/web`，使用 Next.js API Routes、Prisma、PostgreSQL、APIMart、腾讯云 COS 和 Ark。
+
+邮箱密码账号、数据库登录会话、匿名 owner 绑定和多用户隔离已经在 `apps/web` 完成。当前 P0 是 GitHub 两级整合、生图安全审核错误体验和上传图片压缩，不是 NestJS 迁移。
+
+当前事实请优先读取根目录 6 份交接文档。
+
+---
+
 # MVP Backend Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -206,7 +218,7 @@ volumes:
 # apps/api/.env.example
 NODE_ENV=development
 PORT=3001
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_marketing
+# DATABASE_URL should point to local PostgreSQL. Do not write real credentials in docs.
 REDIS_URL=redis://localhost:6379
 STORAGE_DRIVER=local
 LOCAL_STORAGE_DIR=.local-storage

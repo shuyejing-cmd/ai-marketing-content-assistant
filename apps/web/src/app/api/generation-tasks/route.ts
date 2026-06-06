@@ -1,11 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createMockGenerationTask } from '@/features/generation/mock-generation';
 import type { GenerationTaskRequest } from '@/features/generation/generation-types';
-import { mockTasks } from '@/features/generation/mock-task-store';
+import { getGenerationService } from '@/features/generation/server/runtime';
+import { getRequestOwner } from '@/features/auth/server/request-auth';
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json()) as GenerationTaskRequest;
-  const task = createMockGenerationTask(body);
-  mockTasks.set(task.id, task);
-  return NextResponse.json(task, { status: 201 });
+  try {
+    const body = await request.json();
+    const generationRequest = unwrapGenerationRequest(body);
+    const { ownerId } = await getRequestOwner(request);
+    const task = await getGenerationService().createTask({
+      ownerId,
+      sessionId: body.sessionId ?? null,
+      request: generationRequest,
+    });
+    return NextResponse.json(task, { status: 201 });
+  } catch (error) {
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : '生成失败' },
+      { status: 500 },
+    );
+  }
+}
+
+function unwrapGenerationRequest(body: (GenerationTaskRequest & { ownerId?: unknown }) | { request: GenerationTaskRequest }) {
+  if ('request' in body) return body.request;
+  const { ownerId: _ownerId, ...generationRequest } = body;
+  return generationRequest;
 }

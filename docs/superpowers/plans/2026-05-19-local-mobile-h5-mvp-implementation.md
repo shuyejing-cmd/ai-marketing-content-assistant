@@ -1,3 +1,13 @@
+# 历史状态说明（2026-06-06）
+
+状态：已完成，并被当前 `apps/web` 实现继续扩展。
+
+本文描述最初的本地移动 H5 mock MVP。当前产品已经加入 PostgreSQL + Prisma、APIMart `gpt-image-2-official`、腾讯云 COS 图生图中转、Ark 文案、模板、账号、匿名数据绑定和多用户隔离。
+
+本文保留原始步骤用于追溯，不代表当前待办。当前事实请优先读取根目录 `AGENTS.md`、`CURRENT_STATUS.md`、`NEXT_TASKS.md`、`ARCHITECTURE.md`、`PROJECT_BRIEF.md` 和 `DECISIONS.md`。
+
+---
+
 # Local Mobile H5 MVP Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

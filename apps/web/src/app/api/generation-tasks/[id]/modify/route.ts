@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { modifyMockGenerationTask } from '@/features/generation/mock-generation';
-import { mockTasks } from '@/features/generation/mock-task-store';
+import { getRequestOwner } from '@/features/auth/server/request-auth';
+import { getGenerationService } from '@/features/generation/server/runtime';
+import { createTemplateRepository } from '@/features/templates/server/template-repository';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -8,7 +9,9 @@ type RouteContext = {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
-  const previous = mockTasks.get(id);
+  const { ownerId } = await getRequestOwner(request);
+  const service = getGenerationService();
+  const previous = await service.getTaskForOwner(ownerId, id);
   if (!previous) {
     return NextResponse.json({ message: 'Task not found' }, { status: 404 });
   }
@@ -16,8 +19,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const body = (await request.json()) as {
     selectedResultId: string;
     modificationText: string;
+    sessionId?: string;
   };
-  const task = modifyMockGenerationTask(previous, body.selectedResultId, body.modificationText);
-  mockTasks.set(task.id, task);
-  return NextResponse.json(task, { status: 201 });
+  try {
+    const templateInstruction = previous.request.templateId
+      ? (await createTemplateRepository().getAdminTemplate(previous.request.templateId))?.prompt
+      : undefined;
+    const task = await service.createTask({
+      ownerId,
+      sessionId: body.sessionId ?? null,
+      request: previous.request,
+      modificationText: body.modificationText,
+      templateInstruction,
+    });
+    return NextResponse.json(task, { status: 201 });
+  } catch (error) {
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : '二次修改失败' },
+      { status: 500 },
+    );
+  }
 }

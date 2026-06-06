@@ -34,6 +34,9 @@ export type GenerationTaskRequest = {
   scene: MarketingScene;
   style: StyleTemplate;
   campaignInfo: CampaignInfo;
+  templateId?: string;
+  templateTitle?: string;
+  templateInstruction?: string;
 };
 
 export type GenerationResult = {
@@ -44,12 +47,14 @@ export type GenerationResult = {
   publishingCopy: string;
   imageText: string[];
   imageUrl?: string;
+  generatedImageDataUrl?: string;
   uploadedImageDataUrl?: string;
 };
 
 export type GenerationTask = {
   id: string;
-  status: 'succeeded';
+  status: 'succeeded' | 'failed';
+  errorMessage?: string;
   request: GenerationTaskRequest;
   results: GenerationResult[];
 };
