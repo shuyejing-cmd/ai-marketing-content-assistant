@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id            String           @id
+  ownerId       String
+  kind          String           @default("free")
+  templateId    String?
+  title         String
+  currentTaskId String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  tasks         GenerationTask[]
+
+  @@index([ownerId, updatedAt])
+  @@index([ownerId, kind, updatedAt])
+  @@index([ownerId, kind, templateId, updatedAt])
+}
+
+model GenerationTask {
+  id           String             @id
+  ownerId      String
+  sessionId    String?
+  status       String
+  requestJson  Json
+  errorMessage String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  session      Session?           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  results      GenerationResult[]
+  promptLogs   PromptLog[]
+
+  @@index([ownerId, updatedAt])
+  @@index([sessionId, updatedAt])
+}
+
+model GenerationResult {
+  id                   String         @id
+  taskId               String
+  channel              String
+  style                String
+  title                String
+  publishingCopy       String
+  imageText            Json
+  imageUrl             String?
+  generatedImageDataUrl String?
+  uploadedImageDataUrl String?
+  imageAssetId         String?
+  createdAt            DateTime       @default(now())
+  task                 GenerationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  imageAsset           ImageAsset?    @relation(fields: [imageAssetId], references: [id])
+
+  @@index([taskId])
+}
+
+model ImageAsset {
+  id             String             @id
+  ownerId        String
+  kind           String
+  mimeType       String
+  base64         String
+  createdAt      DateTime           @default(now())
+  results        GenerationResult[]
+
+  @@index([ownerId, createdAt])
+}
+
+model PromptLog {
+  id                   String          @id
+  taskId               String?
+  promptVersion        String
+  imagePrompt          String
+  copyPrompt           String
+  providerRequestJson  Json?
+  providerResponseJson Json?
+  errorMessage         String?
+  createdAt            DateTime        @default(now())
+  task                 GenerationTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+}
+
+model Template {
+  id            String   @id
+  type          String
+  title         String
+  description   String
+  coverMimeType String
+  coverBase64   String
+  prompt        String
+  published     Boolean  @default(false)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([type, published, sortOrder])
+}
+
+model User {
+  id           String        @id
+  email        String        @unique
+  passwordHash String
+  role         String        @default("user")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  authSessions AuthSession[]
+
+  @@index([role])
+}
+
+model AuthSession {
+  id        String   @id
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
