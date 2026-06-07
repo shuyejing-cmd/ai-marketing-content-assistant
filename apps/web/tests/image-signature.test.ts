@@ -3,7 +3,11 @@ import {
   imageErrorPayload,
   isImageProcessingErrorCode,
 } from '../src/features/image-upload/image-errors';
-import { detectImageMime } from '../src/features/image-upload/image-signature';
+import {
+  MAX_IMAGE_SIGNATURE_BYTES,
+  detectImageMime,
+  readImageSignature,
+} from '../src/features/image-upload/image-signature';
 import {
   MAX_FINAL_IMAGE_BYTES,
   MAX_FINAL_IMAGE_EDGE,
@@ -20,8 +24,31 @@ function ascii(value: string): number[] {
   return Array.from(value, (character) => character.charCodeAt(0));
 }
 
-function isoBmff(majorBrand: string): Uint8Array {
-  return new Uint8Array([0, 0, 0, 24, ...ascii('ftyp'), ...ascii(majorBrand)]);
+function isoBmff(
+  majorBrand: string,
+  compatibleBrands: string[] = [],
+  declaredSize?: number,
+): Uint8Array {
+  const bytes = new Uint8Array([
+    0,
+    0,
+    0,
+    0,
+    ...ascii('ftyp'),
+    ...ascii(majorBrand),
+    0,
+    0,
+    0,
+    0,
+    ...compatibleBrands.flatMap(ascii),
+  ]);
+  const boxSize = declaredSize ?? bytes.length;
+
+  bytes[0] = (boxSize >>> 24) & 0xff;
+  bytes[1] = (boxSize >>> 16) & 0xff;
+  bytes[2] = (boxSize >>> 8) & 0xff;
+  bytes[3] = boxSize & 0xff;
+  return bytes;
 }
 
 describe('detectImageMime', () => {
@@ -53,6 +80,53 @@ describe('detectImageMime', () => {
     expect(detectImageMime(isoBmff('avif'))).toBeNull();
   });
 
+  it('does not treat a generic HEIF major brand with compatible AVIF as HEIF', () => {
+    expect(detectImageMime(isoBmff('mif1', ['avif']))).toBeNull();
+  });
+
+  it('does not treat an AVIF major brand with compatible generic HEIF as HEIF', () => {
+    expect(detectImageMime(isoBmff('avif', ['mif1']))).toBeNull();
+  });
+
+  it('prefers a compatible HEIC brand over a generic HEIF major brand', () => {
+    expect(detectImageMime(isoBmff('mif1', ['heic']))).toBe('image/heic');
+  });
+
+  it('detects a complete generic HEIF box without an AVIF brand', () => {
+    expect(detectImageMime(isoBmff('mif1', ['mif1']))).toBe('image/heif');
+  });
+
+  it('rejects an ftyp box whose declared size exceeds the available bytes', () => {
+    expect(detectImageMime(isoBmff('mif1', [], 20))).toBeNull();
+  });
+
+  it('rejects an ftyp box whose declared size is shorter than the fixed fields', () => {
+    expect(detectImageMime(isoBmff('mif1', [], 12))).toBeNull();
+  });
+
+  it('rejects an ftyp box with a truncated compatible brand', () => {
+    const bytes = new Uint8Array([...isoBmff('mif1'), 0x61]);
+    bytes[3] = bytes.length;
+
+    expect(detectImageMime(bytes)).toBeNull();
+  });
+
+  it('detects a complete ftyp box at the signature byte limit', () => {
+    const compatibleBrands = Array.from({ length: 1020 }, () => 'zzzz');
+    compatibleBrands[1019] = 'heic';
+    const bytes = isoBmff('zzzz', compatibleBrands);
+
+    expect(bytes).toHaveLength(MAX_IMAGE_SIGNATURE_BYTES);
+    expect(detectImageMime(bytes)).toBe('image/heic');
+  });
+
+  it('rejects a complete ftyp box larger than the signature byte limit', () => {
+    const bytes = isoBmff('mif1', Array.from({ length: 1021 }, () => 'zzzz'));
+
+    expect(bytes.length).toBeGreaterThan(MAX_IMAGE_SIGNATURE_BYTES);
+    expect(detectImageMime(bytes)).toBeNull();
+  });
+
   it.each([
     new Uint8Array(),
     new Uint8Array([0xff]),
@@ -70,15 +144,27 @@ describe('detectImageMime', () => {
   });
 });
 
+describe('readImageSignature', () => {
+  it('reads only the signature byte limit from a large blob', async () => {
+    const file = new Blob([new Uint8Array(MAX_IMAGE_SIGNATURE_BYTES + 2048).fill(0x7f)]);
+
+    const signature = await readImageSignature(file);
+
+    expect(signature).toHaveLength(MAX_IMAGE_SIGNATURE_BYTES);
+    expect(signature.every((byte) => byte === 0x7f)).toBe(true);
+  });
+});
+
 describe('image upload contracts', () => {
   it('exports the agreed image limits', () => {
+    expect(MAX_IMAGE_SIGNATURE_BYTES).toBe(4096);
     expect(MAX_FINAL_IMAGE_BYTES).toBe(10 * 1024 * 1024);
     expect(MAX_FINAL_IMAGE_EDGE).toBe(4096);
     expect(MAX_FINAL_IMAGE_PIXELS).toBe(4096 * 4096);
     expect(MAX_HEIC_SOURCE_BYTES).toBe(40 * 1024 * 1024);
   });
 
-  it('keeps the supported MIME types, processing modes, and result shape type-safe', () => {
+  it('accepts the current MIME types, processing modes, and result shape', () => {
     const finalMimes = ['image/jpeg', 'image/png', 'image/webp'] satisfies FinalImageMime[];
     const uploadMimes = [
       ...finalMimes,
@@ -101,7 +187,7 @@ describe('image upload contracts', () => {
       processing: processingModes[0],
     } satisfies ProcessedUploadImage;
 
-    expect(uploadMimes).toHaveLength(5);
+    expect(uploadMimes).toContain('image/heif');
     expect(processed.processing).toBe('original');
   });
 });
