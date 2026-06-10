@@ -10,6 +10,7 @@ import { POST as createTemplateTask } from '../src/app/api/templates/[id]/genera
 import { getRequestOwner } from '../src/features/auth/server/request-auth';
 import { getGenerationService } from '../src/features/generation/server/runtime';
 import { createSessionRepository } from '../src/features/generation/server/session-repository';
+import { ImageProcessingError } from '../src/features/image-upload/image-errors';
 import { createTemplateRepository } from '../src/features/templates/server/template-repository';
 
 vi.mock('../src/features/auth/server/request-auth', () => ({
@@ -132,6 +133,47 @@ describe('request owner API routing', () => {
         request: expect.not.objectContaining({ ownerId: 'user:victim' }),
       }),
     );
+  });
+
+  it('free generation returns the stable image error payload and status', async () => {
+    getService.mockReturnValue({
+      createTask: vi.fn(async () => {
+        throw new ImageProcessingError('IMAGE_OUTPUT_TOO_LARGE', 413);
+      }),
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await createTask(
+      jsonRequest('/api/generation-tasks', {
+        sessionId: 'session_1',
+        request: generationRequest,
+      }),
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      code: 'IMAGE_OUTPUT_TOO_LARGE',
+      message: new ImageProcessingError('IMAGE_OUTPUT_TOO_LARGE', 413).message,
+    });
+  });
+
+  it('free generation keeps unknown errors as a generic 500 response', async () => {
+    getService.mockReturnValue({
+      createTask: vi.fn(async () => {
+        throw new Error('provider unavailable');
+      }),
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await createTask(
+      jsonRequest('/api/generation-tasks', {
+        sessionId: 'session_1',
+        request: generationRequest,
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      message: 'provider unavailable',
+    });
   });
 
   it('template generation task ignores body.ownerId and uses getRequestOwner ownerId', async () => {

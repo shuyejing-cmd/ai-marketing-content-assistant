@@ -3,6 +3,7 @@ import { getGenerationService } from '@/features/generation/server/runtime';
 import type { CampaignInfo } from '@/features/generation/generation-types';
 import { createTemplateRepository } from '@/features/templates/server/template-repository';
 import { getRequestOwner } from '@/features/auth/server/request-auth';
+import { ImageProcessingError, imageErrorPayload } from '@/features/image-upload/image-errors';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -43,6 +44,10 @@ export async function POST(request: Request, context: RouteContext) {
     });
     return NextResponse.json(task, { status: 201 });
   } catch (error) {
+    if (error instanceof ImageProcessingError) {
+      const payload = imageErrorPayload(error);
+      return NextResponse.json(payload.body, { status: payload.status });
+    }
     return NextResponse.json(
       { message: error instanceof Error ? error.message : '模板生成失败' },
       { status: 500 },

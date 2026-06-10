@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { GenerationTaskRequest } from '@/features/generation/generation-types';
 import { getGenerationService } from '@/features/generation/server/runtime';
 import { getRequestOwner } from '@/features/auth/server/request-auth';
+import { ImageProcessingError, imageErrorPayload } from '@/features/image-upload/image-errors';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +16,10 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(task, { status: 201 });
   } catch (error) {
+    if (error instanceof ImageProcessingError) {
+      const payload = imageErrorPayload(error);
+      return NextResponse.json(payload.body, { status: payload.status });
+    }
     return NextResponse.json(
       { message: error instanceof Error ? error.message : '生成失败' },
       { status: 500 },

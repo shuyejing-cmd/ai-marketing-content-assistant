@@ -5,6 +5,7 @@ import { POST as createTemplateTask } from '../src/app/api/templates/[id]/genera
 import { createTemplateRepository } from '../src/features/templates/server/template-repository';
 import { getGenerationService } from '../src/features/generation/server/runtime';
 import { requireUser } from '../src/features/auth/server/request-auth';
+import { ImageProcessingError } from '../src/features/image-upload/image-errors';
 
 vi.mock('../src/features/templates/server/template-repository', () => ({
   createTemplateRepository: vi.fn(),
@@ -326,4 +327,88 @@ describe('template API', () => {
       }),
     );
   });
+
+  it('template generation returns the stable image error payload and status', async () => {
+    createRepository.mockReturnValue({
+      getAdminTemplate: vi.fn(async () => publishedImageTemplate()),
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+    getService.mockReturnValue({
+      createTask: vi.fn(async () => {
+        throw new ImageProcessingError('IMAGE_OUTPUT_TOO_LARGE', 413);
+      }),
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await createTemplateTask(templateGenerationRequest(), {
+      params: Promise.resolve({ id: 'tpl_1' }),
+    });
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      code: 'IMAGE_OUTPUT_TOO_LARGE',
+      message: new ImageProcessingError('IMAGE_OUTPUT_TOO_LARGE', 413).message,
+    });
+  });
+
+  it('template generation keeps unknown errors as a generic 500 response', async () => {
+    createRepository.mockReturnValue({
+      getAdminTemplate: vi.fn(async () => publishedImageTemplate()),
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+    getService.mockReturnValue({
+      createTask: vi.fn(async () => {
+        throw new Error('provider unavailable');
+      }),
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await createTemplateTask(templateGenerationRequest(), {
+      params: Promise.resolve({ id: 'tpl_1' }),
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      message: 'provider unavailable',
+    });
+  });
+
+  it('template generation keeps missing templates as a 404 without calling generation', async () => {
+    createRepository.mockReturnValue({
+      getAdminTemplate: vi.fn(async () => null),
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+    const createTask = vi.fn();
+    getService.mockReturnValue({
+      createTask,
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await createTemplateTask(templateGenerationRequest(), {
+      params: Promise.resolve({ id: 'tpl_missing' }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(createTask).not.toHaveBeenCalled();
+  });
 });
+
+function publishedImageTemplate() {
+  return {
+    id: 'tpl_1',
+    type: 'image' as const,
+    title: 'Template',
+    description: 'Template description',
+    coverImageDataUrl: 'data:image/png;base64,cover',
+    prompt: 'Server prompt',
+    published: true,
+    sortOrder: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function templateGenerationRequest() {
+  return new Request('http://localhost/api/templates/tpl_1/generation-tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: 'session_1',
+      uploadedImageDataUrl: 'data:image/png;base64,input',
+    }),
+  });
+}
