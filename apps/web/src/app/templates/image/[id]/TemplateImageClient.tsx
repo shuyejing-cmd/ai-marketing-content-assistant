@@ -30,13 +30,15 @@ import {
   getTemplate,
 } from '@/features/templates/template-client';
 import type { PublicTemplate } from '@/features/templates/template-types';
+import type { ProcessedUploadImage } from '@/features/image-upload/image-types';
 
 type SheetKey = 'upload' | 'info' | 'menu' | null;
 
 export function TemplateImageClient({ templateId }: { templateId: string }) {
   const [template, setTemplate] = useState<PublicTemplate | null>(null);
   const [activeSheet, setActiveSheet] = useState<SheetKey>(null);
-  const [uploadedImageDataUrl, setUploadedImageDataUrl] = useState<string | undefined>();
+  const [uploadedImage, setUploadedImage] = useState<ProcessedUploadImage | undefined>();
+  const [imageProcessing, setImageProcessing] = useState(false);
   const [campaignInfo, setCampaignInfo] = useState<CampaignInfo>({});
   const [task, setTask] = useState<GenerationTask | null>(null);
   const [sessions, setSessions] = useState<GenerationSession[]>([]);
@@ -81,7 +83,8 @@ export function TemplateImageClient({ templateId }: { templateId: string }) {
     setCurrentTemplateRemoteSessionId(templateId, session.id);
     setCurrentSession(session);
     setTask(getActiveTask(session));
-    setUploadedImageDataUrl(undefined);
+    setUploadedImage(undefined);
+    setImageProcessing(false);
     setCampaignInfo({});
   }
 
@@ -104,17 +107,25 @@ export function TemplateImageClient({ templateId }: { templateId: string }) {
     });
   }
 
-  function handleUploadedImageChange(imageDataUrl: string | undefined) {
-    setUploadedImageDataUrl(imageDataUrl);
-    if (!imageDataUrl) return;
+  function handleUploadedImageChange(image: ProcessedUploadImage | undefined) {
+    setUploadedImage(image);
+    if (!image) return;
     logFrontendEvent('frontend.image.uploaded', {
-      image: summarizeImageDataUrl(imageDataUrl),
+      image: summarizeImageDataUrl(image.dataUrl),
+      width: image.width,
+      height: image.height,
+      processing: image.processing,
       source: 'template',
     });
   }
 
   async function handleSubmit() {
-    if (!template || !uploadedImageDataUrl) {
+    if (imageProcessing) {
+      setError('图片仍在处理中，请稍候');
+      return;
+    }
+
+    if (!template || !uploadedImage) {
       setError('请先上传图片');
       return;
     }
@@ -123,7 +134,7 @@ export function TemplateImageClient({ templateId }: { templateId: string }) {
     setError(null);
     logFrontendEvent('frontend.generation.submit', {
       hasUploadedImage: true,
-      image: summarizeImageDataUrl(uploadedImageDataUrl),
+      image: summarizeImageDataUrl(uploadedImage.dataUrl),
       filledCampaignFields: getFilledCampaignFields(campaignInfo),
       mode: 'template-image-to-image',
     });
@@ -131,7 +142,7 @@ export function TemplateImageClient({ templateId }: { templateId: string }) {
       const nextTask = await createTemplateGenerationTask(
         template.id,
         {
-          uploadedImageDataUrl,
+          uploadedImageDataUrl: uploadedImage.dataUrl,
           campaignInfo,
         },
         {
@@ -141,7 +152,8 @@ export function TemplateImageClient({ templateId }: { templateId: string }) {
       );
       setTask(nextTask);
       persistTask(nextTask);
-      setUploadedImageDataUrl(undefined);
+      setUploadedImage(undefined);
+      setImageProcessing(false);
       setCampaignInfo({});
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : '模板生成失败');
@@ -175,7 +187,8 @@ export function TemplateImageClient({ templateId }: { templateId: string }) {
     setCurrentSession(nextSession);
     setSessions((previous) => [nextSession, ...previous]);
     setTask(null);
-    setUploadedImageDataUrl(undefined);
+    setUploadedImage(undefined);
+    setImageProcessing(false);
     setCampaignInfo({});
     setError(null);
     setActiveSheet(null);
@@ -297,12 +310,12 @@ export function TemplateImageClient({ templateId }: { templateId: string }) {
                   onClick={() => setActiveSheet('upload')}
                   className="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-[13px] text-ink"
                 >
-                  {uploadedImageDataUrl ? (
-                    <img src={uploadedImageDataUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                  {uploadedImage ? (
+                    <img src={uploadedImage.dataUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
                   ) : (
                     <ImagePlus size={15} aria-hidden="true" />
                   )}
-                  {uploadedImageDataUrl ? '已上传图片' : '上传图片'}
+                  {uploadedImage ? '已上传图片' : '上传图片'}
                 </button>
                 <button
                   type="button"
@@ -316,11 +329,11 @@ export function TemplateImageClient({ templateId }: { templateId: string }) {
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={loading || !uploadedImageDataUrl}
+                disabled={loading || imageProcessing || !uploadedImage}
                 className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-accent text-[15px] font-semibold text-white disabled:bg-line disabled:text-muted"
               >
                 <Wand2 size={17} aria-hidden="true" />
-                {loading ? '生成中...' : '生成模板图片'}
+                {imageProcessing ? '正在处理图片...' : loading ? '生成中...' : '生成模板图片'}
               </button>
             </>
           ) : (
@@ -332,7 +345,11 @@ export function TemplateImageClient({ templateId }: { templateId: string }) {
       </div>
 
       <BottomSheet title="上传图片" open={activeSheet === 'upload'} onClose={() => setActiveSheet(null)}>
-        <ImageUploader imageDataUrl={uploadedImageDataUrl} onChange={handleUploadedImageChange} />
+        <ImageUploader
+          image={uploadedImage}
+          onChange={handleUploadedImageChange}
+          onProcessingChange={setImageProcessing}
+        />
       </BottomSheet>
 
       <BottomSheet title="活动信息" open={activeSheet === 'info'} onClose={() => setActiveSheet(null)}>
