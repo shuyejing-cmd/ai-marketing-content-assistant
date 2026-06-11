@@ -6,7 +6,7 @@
 
 截至 2026-06-11 的最近验证：
 
-- Vitest：40 个测试文件、354 条测试通过。
+- Vitest：40 个测试文件、360 条测试通过。
 - Next.js 生产构建：通过。
 - Playwright mobile mock E2E：18 条全部通过，包含普通图片处理、HEIC/HEIF 服务端兜底、失败恢复和 iPhone 13 布局。
 - 真实 JPEG、大图、HEIC/HEIF 与 APIMart 的最终人工验收只应执行一次，目前尚未执行。
