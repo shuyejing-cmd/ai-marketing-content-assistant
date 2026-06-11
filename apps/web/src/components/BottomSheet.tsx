@@ -14,8 +14,8 @@ export function BottomSheet({ title, open, onClose, children }: BottomSheetProps
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 px-3">
-      <section className="max-h-[82dvh] w-full max-w-[430px] overflow-auto rounded-t-xl bg-surface p-4 shadow-soft">
-        <div className="mb-4 flex items-center justify-between">
+      <section className="flex max-h-[92dvh] w-full max-w-[430px] flex-col overflow-hidden rounded-t-xl bg-surface p-4 shadow-soft">
+        <div className="mb-4 flex shrink-0 items-center justify-between">
           <h2 className="text-[17px] font-semibold text-ink">{title}</h2>
           <button
             type="button"
@@ -27,9 +27,9 @@ export function BottomSheet({ title, open, onClose, children }: BottomSheetProps
           </button>
         </div>
 
-        <div className="pb-16">{children}</div>
+        <div className="min-h-0 overflow-y-auto pb-4">{children}</div>
 
-        <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-line bg-surface p-4">
+        <div className="-mx-4 -mb-4 shrink-0 border-t border-line bg-surface p-4">
           <button
             type="button"
             onClick={onClose}

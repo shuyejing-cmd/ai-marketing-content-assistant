@@ -140,8 +140,25 @@ export function createGenerationService(options: CreateServiceOptions = {}) {
       });
 
       let uploadedImageAsset: ImageAssetRecord | null = null;
+      let inputImageSummary:
+        | {
+            mimeType: string;
+            bytes: number;
+            width: number;
+            height: number;
+            hash: string;
+          }
+        | undefined;
       if (input.request.uploadedImageDataUrl) {
         const validated = await validateGenerationImageDataUrl(input.request.uploadedImageDataUrl);
+        const dataUrlSummary = summarizeImageDataUrl(input.request.uploadedImageDataUrl);
+        inputImageSummary = {
+          mimeType: validated.mimeType,
+          bytes: validated.buffer.byteLength,
+          width: validated.width,
+          height: validated.height,
+          hash: dataUrlSummary.hash,
+        };
         uploadedImageAsset = {
           id: makeId('asset'),
           ownerId: input.ownerId,
@@ -151,20 +168,13 @@ export function createGenerationService(options: CreateServiceOptions = {}) {
         };
         await store.saveImageAsset(uploadedImageAsset);
         logger.step('generation.uploaded_image.saved', {
-          image: {
-            ...summarizeImageDataUrl(input.request.uploadedImageDataUrl),
-            width: validated.width,
-            height: validated.height,
-          },
+          image: inputImageSummary,
         });
       }
       let inputImageUrl: string | undefined;
       let inputImageSource: InputImageSourceLog | null = null;
 
       try {
-        const inputImageSummary = input.request.uploadedImageDataUrl
-          ? summarizeImageDataUrl(input.request.uploadedImageDataUrl)
-          : undefined;
         const inputImagePublication = uploadedImageAsset
           ? await publishInputImage({
               asset: uploadedImageAsset,
@@ -185,9 +195,6 @@ export function createGenerationService(options: CreateServiceOptions = {}) {
           inputImageUrl: inputImageSource?.provider === 'tencent-cos' ? null : inputImageUrl,
           inputImageSource,
           inputImage: inputImageSummary,
-          inputImageMimeType: inputImageSummary?.mimeType,
-          inputImageBytes: inputImageSummary?.estimatedBytes,
-          inputImageHash: inputImageSummary?.hash,
         });
         const providerResult = await provider.generate({
           prompt: promptPackage.imagePrompt,

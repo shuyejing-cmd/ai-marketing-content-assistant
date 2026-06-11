@@ -221,17 +221,31 @@ describe('generation service', () => {
       }),
     );
     expect(store.imageAssets).toHaveLength(2);
-    expect(logger.steps.find((step) => step.name === 'generation.provider.request')?.meta).toEqual(
+    const providerRequestMeta = logger.steps.find(
+      (step) => step.name === 'generation.provider.request',
+    )?.meta;
+    expect(providerRequestMeta).toEqual(
       expect.objectContaining({
         hasInputImage: true,
         size: '1024x1280',
         responseFormat: 'b64_json',
-        inputImage: expect.objectContaining({
+        inputImage: {
           mimeType: 'image/png',
+          bytes: Buffer.from(tinyPngDataUrl.split(',')[1], 'base64').byteLength,
+          width: 1,
+          height: 1,
           hash: expect.stringMatching(/^img_[a-f0-9]{8}$/),
-        }),
+        },
       }),
     );
+    expect(Object.keys(providerRequestMeta?.inputImage as object).sort()).toEqual(
+      ['bytes', 'hash', 'height', 'mimeType', 'width'],
+    );
+
+    const serializedSteps = JSON.stringify(logger.steps);
+    expect(serializedSteps).not.toContain('data:image/');
+    expect(serializedSteps).not.toContain(tinyPngDataUrl.split(',')[1]);
+    expect(serializedSteps).not.toContain('GPS');
   });
 
   it('uses Seedream by default when Ark credentials are configured', async () => {
