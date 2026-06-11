@@ -62,6 +62,8 @@ const generationTask = {
   results: [],
 };
 
+const MAX_GENERATION_REQUEST_BYTES = 16 * 1024 * 1024;
+
 function jsonRequest(path: string, body: unknown, headers?: HeadersInit) {
   return new Request(`http://localhost${path}`, {
     method: 'POST',
@@ -71,6 +73,39 @@ function jsonRequest(path: string, body: unknown, headers?: HeadersInit) {
     },
     body: JSON.stringify(body),
   });
+}
+
+function oversizedStreamingJsonRequest(path: string, body: Record<string, unknown>) {
+  const prefix = Buffer.from(
+    `${JSON.stringify(body).slice(0, -1)},"padding":"`,
+  );
+  const chunks = [
+    Buffer.concat([
+      prefix,
+      Buffer.alloc(MAX_GENERATION_REQUEST_BYTES, 'a'),
+    ]),
+    Buffer.from('"}'),
+  ];
+  let pulls = 0;
+  const cancel = vi.fn();
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulls += 1;
+      const chunk = chunks.shift();
+      if (chunk) controller.enqueue(chunk);
+      else controller.close();
+    },
+    cancel,
+  });
+
+  const request = new Request(`http://localhost${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: stream,
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+
+  return { request, cancel, pulls: () => pulls };
 }
 
 describe('request owner API routing', () => {
@@ -174,6 +209,57 @@ describe('request owner API routing', () => {
     await expect(response.json()).resolves.toEqual({
       message: 'provider unavailable',
     });
+  });
+
+  it('free generation rejects an oversized Content-Length before owner or service lookup', async () => {
+    const createTaskForOwner = vi.fn();
+    getService.mockReturnValue({
+      createTask: createTaskForOwner,
+    } as unknown as ReturnType<typeof getGenerationService>);
+
+    const response = await createTask(
+      jsonRequest(
+        '/api/generation-tasks',
+        {
+          sessionId: 'session_1',
+          request: generationRequest,
+        },
+        { 'content-length': String(MAX_GENERATION_REQUEST_BYTES + 1) },
+      ),
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      code: 'IMAGE_INPUT_TOO_LARGE',
+      message: new ImageProcessingError('IMAGE_INPUT_TOO_LARGE', 413).message,
+    });
+    expect(getOwner).not.toHaveBeenCalled();
+    expect(getService).not.toHaveBeenCalled();
+    expect(createTaskForOwner).not.toHaveBeenCalled();
+  });
+
+  it('free generation cancels an oversized stream without Content-Length before owner or service lookup', async () => {
+    const createTaskForOwner = vi.fn();
+    getService.mockReturnValue({
+      createTask: createTaskForOwner,
+    } as unknown as ReturnType<typeof getGenerationService>);
+    const source = oversizedStreamingJsonRequest('/api/generation-tasks', {
+      sessionId: 'session_1',
+      request: generationRequest,
+    });
+
+    const response = await createTask(source.request);
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      code: 'IMAGE_INPUT_TOO_LARGE',
+      message: new ImageProcessingError('IMAGE_INPUT_TOO_LARGE', 413).message,
+    });
+    expect(source.cancel).toHaveBeenCalledOnce();
+    expect(source.pulls()).toBeLessThanOrEqual(2);
+    expect(getOwner).not.toHaveBeenCalled();
+    expect(getService).not.toHaveBeenCalled();
+    expect(createTaskForOwner).not.toHaveBeenCalled();
   });
 
   it('template generation task ignores body.ownerId and uses getRequestOwner ownerId', async () => {

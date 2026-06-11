@@ -4,7 +4,10 @@ import { PATCH as updateAdminTemplate } from '../src/app/api/admin/templates/[id
 import { POST as createTemplateTask } from '../src/app/api/templates/[id]/generation-tasks/route';
 import { createTemplateRepository } from '../src/features/templates/server/template-repository';
 import { getGenerationService } from '../src/features/generation/server/runtime';
-import { requireUser } from '../src/features/auth/server/request-auth';
+import {
+  getRequestOwner,
+  requireUser,
+} from '../src/features/auth/server/request-auth';
 import { ImageProcessingError } from '../src/features/image-upload/image-errors';
 
 vi.mock('../src/features/templates/server/template-repository', () => ({
@@ -25,6 +28,7 @@ const getService = vi.mocked(getGenerationService);
 const requireUserMock = vi.mocked(requireUser);
 
 const signedInUser = { id: 'user_1', email: 'person@example.com', role: 'user' as const };
+const MAX_GENERATION_REQUEST_BYTES = 16 * 1024 * 1024;
 
 function authDenied(status = 401, message = '请先登录') {
   return Response.json({ message }, { status });
@@ -44,6 +48,45 @@ function templatePatchRequest(id: string, body: unknown) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+function oversizedStreamingTemplateRequest() {
+  const body = {
+    sessionId: 'session_1',
+    uploadedImageDataUrl: 'data:image/png;base64,input',
+  };
+  const prefix = Buffer.from(
+    `${JSON.stringify(body).slice(0, -1)},"padding":"`,
+  );
+  const chunks = [
+    Buffer.concat([
+      prefix,
+      Buffer.alloc(MAX_GENERATION_REQUEST_BYTES, 'a'),
+    ]),
+    Buffer.from('"}'),
+  ];
+  let pulls = 0;
+  const cancel = vi.fn();
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulls += 1;
+      const chunk = chunks.shift();
+      if (chunk) controller.enqueue(chunk);
+      else controller.close();
+    },
+    cancel,
+  });
+  const request = new Request(
+    'http://localhost/api/templates/tpl_1/generation-tasks',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' },
+  );
+
+  return { request, cancel, pulls: () => pulls };
 }
 
 describe('template API', () => {
@@ -385,6 +428,89 @@ describe('template API', () => {
     expect(response.status).toBe(404);
     expect(createTask).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { label: 'empty', body: undefined },
+    { label: 'malformed', body: '{"uploadedImageDataUrl":' },
+  ])(
+    'template generation keeps the missing-image 400 for $label JSON',
+    async ({ body }) => {
+      createRepository.mockReturnValue({
+        getAdminTemplate: vi.fn(async () => publishedImageTemplate()),
+      } as unknown as ReturnType<typeof createTemplateRepository>);
+      const createTask = vi.fn();
+      getService.mockReturnValue({
+        createTask,
+      } as unknown as ReturnType<typeof getGenerationService>);
+
+      const response = await createTemplateTask(
+        rawTemplateGenerationRequest(body),
+        { params: Promise.resolve({ id: 'tpl_1' }) },
+      );
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        message: '请先上传图片',
+      });
+      expect(getRequestOwner).not.toHaveBeenCalled();
+      expect(getService).not.toHaveBeenCalled();
+      expect(createTask).not.toHaveBeenCalled();
+    },
+  );
+
+  it('template generation rejects an oversized Content-Length before owner or service lookup', async () => {
+    createRepository.mockReturnValue({
+      getAdminTemplate: vi.fn(async () => publishedImageTemplate()),
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+    const createTask = vi.fn();
+    getService.mockReturnValue({
+      createTask,
+    } as unknown as ReturnType<typeof getGenerationService>);
+    const request = templateGenerationRequest();
+    request.headers.set(
+      'content-length',
+      String(MAX_GENERATION_REQUEST_BYTES + 1),
+    );
+
+    const response = await createTemplateTask(request, {
+      params: Promise.resolve({ id: 'tpl_1' }),
+    });
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      code: 'IMAGE_INPUT_TOO_LARGE',
+      message: new ImageProcessingError('IMAGE_INPUT_TOO_LARGE', 413).message,
+    });
+    expect(getRequestOwner).not.toHaveBeenCalled();
+    expect(getService).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it('template generation cancels an oversized stream without Content-Length before owner or service lookup', async () => {
+    createRepository.mockReturnValue({
+      getAdminTemplate: vi.fn(async () => publishedImageTemplate()),
+    } as unknown as ReturnType<typeof createTemplateRepository>);
+    const createTask = vi.fn();
+    getService.mockReturnValue({
+      createTask,
+    } as unknown as ReturnType<typeof getGenerationService>);
+    const source = oversizedStreamingTemplateRequest();
+
+    const response = await createTemplateTask(source.request, {
+      params: Promise.resolve({ id: 'tpl_1' }),
+    });
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      code: 'IMAGE_INPUT_TOO_LARGE',
+      message: new ImageProcessingError('IMAGE_INPUT_TOO_LARGE', 413).message,
+    });
+    expect(source.cancel).toHaveBeenCalledOnce();
+    expect(source.pulls()).toBeLessThanOrEqual(2);
+    expect(getRequestOwner).not.toHaveBeenCalled();
+    expect(getService).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
+  });
 });
 
 function publishedImageTemplate() {
@@ -410,5 +536,13 @@ function templateGenerationRequest() {
       sessionId: 'session_1',
       uploadedImageDataUrl: 'data:image/png;base64,input',
     }),
+  });
+}
+
+function rawTemplateGenerationRequest(body?: BodyInit | null) {
+  return new Request('http://localhost/api/templates/tpl_1/generation-tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
   });
 }

@@ -4,9 +4,16 @@ import type { CampaignInfo } from '@/features/generation/generation-types';
 import { createTemplateRepository } from '@/features/templates/server/template-repository';
 import { getRequestOwner } from '@/features/auth/server/request-auth';
 import { ImageProcessingError, imageErrorPayload } from '@/features/image-upload/image-errors';
+import { readBoundedJson } from '@/features/image-upload/server/read-bounded-json';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
+};
+
+type TemplateGenerationBody = {
+  sessionId?: string | null;
+  uploadedImageDataUrl?: string;
+  campaignInfo?: CampaignInfo;
 };
 
 export async function POST(request: Request, context: RouteContext) {
@@ -16,16 +23,12 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ message: '图片模板不存在或未发布' }, { status: 404 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as {
-    sessionId?: string | null;
-    uploadedImageDataUrl?: string;
-    campaignInfo?: CampaignInfo;
-  };
-  if (!body.uploadedImageDataUrl) {
-    return NextResponse.json({ message: '请先上传图片' }, { status: 400 });
-  }
-
   try {
+    const body = await readTemplateGenerationBody(request);
+    if (!body.uploadedImageDataUrl) {
+      return NextResponse.json({ message: '请先上传图片' }, { status: 400 });
+    }
+
     const { ownerId } = await getRequestOwner(request);
     const task = await getGenerationService().createTask({
       ownerId,
@@ -52,5 +55,16 @@ export async function POST(request: Request, context: RouteContext) {
       { message: error instanceof Error ? error.message : '模板生成失败' },
       { status: 500 },
     );
+  }
+}
+
+async function readTemplateGenerationBody(
+  request: Request,
+): Promise<TemplateGenerationBody> {
+  try {
+    return await readBoundedJson<TemplateGenerationBody>(request);
+  } catch (error) {
+    if (error instanceof ImageProcessingError) throw error;
+    return {};
   }
 }
