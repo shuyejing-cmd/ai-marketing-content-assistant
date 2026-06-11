@@ -187,6 +187,7 @@ APIMartImageProvider
 错误边界：
 
 - 网络连接失败：provider fetch error。
+- COS 上传失败：发生在 `generation.provider.request` 之前，APIMart 尚未收到请求；当前 generation service 会将其记录为通用 `generation.provider.failed`。
 - 上游安全审核：APIMart `HTTP 400`，消息包含 safety rejection。
 - 图片 provider 失败：任务失败。
 - 文案 provider 失败：图片任务仍成功，使用 fallback 文案。

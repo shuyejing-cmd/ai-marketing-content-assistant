@@ -9,7 +9,8 @@
 - Vitest：40 个测试文件、360 条测试通过。
 - Next.js 生产构建：通过。
 - Playwright mobile mock E2E：18 条全部通过，包含普通图片处理、HEIC/HEIF 服务端兜底、失败恢复和 iPhone 13 布局。
-- 真实 JPEG、大图、HEIC/HEIF 与 APIMart 的最终人工验收只应执行一次，目前尚未执行。
+- 真实上传人工验收已完成：5894 字节、1200×800 的 JPEG 原样保留；10,952,852 字节、5000×5000 的 JPEG 自动处理为 8,272,208 字节、4096×4096；HEIF 无感转换为 1172 字节、29×100 的 JPEG。
+- 续费后真实图生图验收成功：最终 JPEG 通过服务端强校验，经腾讯 COS 私有对象中转进入 `APIMartImageProvider`，返回 1 个模型图片 URL；Ark 文案生成同时成功。
 - Prisma migration 已在本地 PostgreSQL 部署。
 - 注册后刷新、重启开发服务后恢复登录态已验证。
 - APIMart 经本机 HTTP 代理连通已验证。
@@ -91,7 +92,7 @@
 ## 当前已知限制
 
 - 图片仍以 base64 长期保存在 PostgreSQL，可能造成数据库膨胀。
-- 真实 JPEG、大图、HEIC/HEIF 与 APIMart 的一次性最终人工验收尚未执行。
+- 真实 JPEG、大图、HEIC/HEIF 上传边界和 APIMart 图生图全链路均已人工验证。
 - 同步 WASM/Sharp 无法在 deadline 到达时硬中断；系统选择等待底层工作真正结束后再释放资源和 admission slot。
 - APIMart 安全审核拒绝目前作为通用 provider 失败返回，前端还没有专门提示。
 - `url.parse()` 依赖弃用警告尚未定位到具体第三方调用方。
@@ -109,4 +110,4 @@
 
 ## 下一步
 
-下一步只执行一次真实 JPEG、大图、HEIC/HEIF 与 APIMart 人工验收；确认后推进 `image-upload-stability` 的审查与 GitHub 合入。不要在 Git 整合完成前删除主工作区文件、工作树、本地分支或安全 stash。
+下一步推进 `image-upload-stability` 的最终验证、提交和 GitHub 合入。不要在 Git 整合完成前删除主工作区文件、工作树、本地分支或安全 stash。
