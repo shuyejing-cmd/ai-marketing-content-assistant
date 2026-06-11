@@ -2,13 +2,14 @@
 
 ## 当前状态摘要
 
-图片营销 MVP、账号系统和真实模型链路修复已经在本地分支 `account-owner-migration` 完成并提交。当前尚未合入 GitHub 的 `feature/local-mobile-mvp` 和 `main`。
+图片营销 MVP、账号系统和真实模型链路修复已经在本地分支 `account-owner-migration` 完成并提交。图片上传稳定性功能已在本地 `image-upload-stability` 分支实现，尚未合入 `main` 或 GitHub 主线。
 
-最近验证：
+截至 2026-06-11 的最近验证：
 
-- Vitest：32 个测试文件、165 条测试通过。
+- Vitest：40 个测试文件、354 条测试通过。
 - Next.js 生产构建：通过。
-- Playwright mobile mock E2E：14 条全部通过。
+- Playwright mobile mock E2E：18 条全部通过，包含普通图片处理、HEIC/HEIF 服务端兜底、失败恢复和 iPhone 13 布局。
+- 真实 JPEG、大图、HEIC/HEIF 与 APIMart 的最终人工验收只应执行一次，目前尚未执行。
 - Prisma migration 已在本地 PostgreSQL 部署。
 - 注册后刷新、重启开发服务后恢复登录态已验证。
 - APIMart 经本机 HTTP 代理连通已验证。
@@ -27,6 +28,18 @@
 - Ark 文案生成 `title`、`publishingCopy`、`imageText`。
 - 模型原图预览和 `/api/download-image` 代理下载。
 - PromptLog 和结构化生成日志。
+
+### 图片上传稳定性
+
+- 普通 JPEG、PNG、WebP 在不超过 10 MiB 且最长边不超过 4096px 时保留原文件字节，不重新编码。
+- 超过最终字节或尺寸限制的普通图片由浏览器等比缩放和压缩；处理后仍不合规则返回明确提示。
+- HEIC/HEIF 优先在浏览器无感转换为 JPEG，浏览器不可用或转换失败时自动进入服务端流式兜底。
+- HEIC/HEIF 源文件上限为 40 MiB；原文件只参与当次处理，不写入 Prisma、不上传 COS、不进入日志。
+- 只保存处理后的最终 JPEG、PNG 或 WebP，不保留上传原图。
+- generation service 在持久化和 COS 上传前执行不可绕过的格式、签名、字节、尺寸和像素强校验。
+- APIMart、COS 与现有生成业务链路保持不变；日志只记录 MIME、字节、尺寸、处理方式等安全摘要。
+- 服务端 HEIC admission 为同时处理 `active=1`、排队 `waiting=4`，并设置请求 deadline。
+- 同步 WASM 解码和 Sharp/libvips 工作不能被硬抢占；底层回调或原生操作未结束时不会提前释放资源或 admission slot，这是防止资源并发失控的已知安全取舍。
 
 ### 账号与数据隔离
 
@@ -78,7 +91,8 @@
 ## 当前已知限制
 
 - 图片仍以 base64 长期保存在 PostgreSQL，可能造成数据库膨胀。
-- 最近一次上传测试图片约 37.8 MB，后续应增加客户端压缩和服务端大小限制。
+- 真实 JPEG、大图、HEIC/HEIF 与 APIMart 的一次性最终人工验收尚未执行。
+- 同步 WASM/Sharp 无法在 deadline 到达时硬中断；系统选择等待底层工作真正结束后再释放资源和 admission slot。
 - APIMart 安全审核拒绝目前作为通用 provider 失败返回，前端还没有专门提示。
 - `url.parse()` 依赖弃用警告尚未定位到具体第三方调用方。
 - 未实现邮箱验证、找回密码、OAuth、支付、积分、订单、团队和模板市场。
@@ -87,6 +101,7 @@
 
 ## Git 状态
 
+- `image-upload-stability`：图片上传稳定性已在本地实现并完成自动化验证，尚未合入 `main` 或 GitHub 主线。
 - `account-owner-migration`：本地已提交，准备推送并创建 PR。
 - `feature/local-mobile-mvp`：本地比 GitHub 远端领先 2 个提交。
 - 主工作区显示的 86 个未提交路径，已确认与 `ab8e118` 基线快照完全一致。
@@ -94,4 +109,4 @@
 
 ## 下一步
 
-先完成中文交接文档和 GitHub 两级 PR，再继续产品功能。不要在 Git 整合完成前删除主工作区文件、账号工作树或本地分支。
+下一步只执行一次真实 JPEG、大图、HEIC/HEIF 与 APIMart 人工验收；确认后推进 `image-upload-stability` 的审查与 GitHub 合入。不要在 Git 整合完成前删除主工作区文件、工作树、本地分支或安全 stash。
