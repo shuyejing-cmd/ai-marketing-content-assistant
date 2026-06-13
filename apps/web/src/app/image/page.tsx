@@ -46,6 +46,7 @@ import {
   type GenerationSession,
 } from '@/features/generation/local-sessions';
 import { upsertTaskIntoSession } from '@/features/generation/session-task-order';
+import type { ProcessedUploadImage } from '@/features/image-upload/image-types';
 
 type SheetKey = 'upload' | 'channel' | 'scene' | 'style' | 'info' | 'menu' | null;
 
@@ -56,7 +57,8 @@ const defaultStyle: StyleTemplate = 'young_trendy';
 export default function ImagePage() {
   const [activeSheet, setActiveSheet] = useState<SheetKey>(null);
   const [requestText, setRequestText] = useState('');
-  const [uploadedImageDataUrl, setUploadedImageDataUrl] = useState<string | undefined>();
+  const [uploadedImage, setUploadedImage] = useState<ProcessedUploadImage | undefined>();
+  const [imageProcessing, setImageProcessing] = useState(false);
   const [channels, setChannels] = useState<Channel[]>(defaultChannels);
   const [scene, setScene] = useState<MarketingScene>(defaultScene);
   const [style, setStyle] = useState<StyleTemplate>(defaultStyle);
@@ -109,7 +111,8 @@ export default function ImagePage() {
   }
 
   function resetComposerState() {
-    setUploadedImageDataUrl(undefined);
+    setUploadedImage(undefined);
+    setImageProcessing(false);
     setChannels(defaultChannels);
     setScene(defaultScene);
     setStyle(defaultStyle);
@@ -124,11 +127,15 @@ export default function ImagePage() {
     });
   }
 
-  function handleUploadedImageChange(imageDataUrl: string | undefined) {
-    setUploadedImageDataUrl(imageDataUrl);
-    if (!imageDataUrl) return;
+  function handleUploadedImageChange(image: ProcessedUploadImage | undefined) {
+    setUploadedImage(image);
+    if (!image) return;
     logFrontendEvent('frontend.image.uploaded', {
-      image: summarizeImageDataUrl(imageDataUrl),
+      image: summarizeImageDataUrl(image.dataUrl),
+      width: image.width,
+      height: image.height,
+      processing: image.processing,
+      source: 'free',
     });
   }
 
@@ -175,12 +182,17 @@ export default function ImagePage() {
   }
 
   async function handleSubmit() {
+    if (imageProcessing) {
+      setError('图片仍在处理中，请稍候');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     logFrontendEvent('frontend.generation.submit', {
       textLength: requestText.trim().length,
-      hasUploadedImage: Boolean(uploadedImageDataUrl),
-      image: uploadedImageDataUrl ? summarizeImageDataUrl(uploadedImageDataUrl) : undefined,
+      hasUploadedImage: Boolean(uploadedImage),
+      image: uploadedImage ? summarizeImageDataUrl(uploadedImage.dataUrl) : undefined,
       channels: channels.map((channel) => ({
         value: channel,
         label: getOptionLabel(channelOptions, channel),
@@ -194,7 +206,7 @@ export default function ImagePage() {
         label: getOptionLabel(styleOptions, style),
       },
       filledCampaignFields: getFilledCampaignFields(campaignInfo),
-      mode: uploadedImageDataUrl ? 'image-to-image' : 'text-to-image',
+      mode: uploadedImage ? 'image-to-image' : 'text-to-image',
       isModification: Boolean(task && modifyingResultId),
     });
     try {
@@ -213,7 +225,7 @@ export default function ImagePage() {
 
       const nextTask = await createGenerationTask({
         requestText,
-        uploadedImageDataUrl,
+        uploadedImageDataUrl: uploadedImage?.dataUrl,
         channels,
         scene,
         style,
@@ -388,10 +400,18 @@ export default function ImagePage() {
           ) : null}
           {ownerId && currentSession ? (
             <>
-              <QuickActionBar onOpen={setActiveSheet} uploadedImageDataUrl={uploadedImageDataUrl} />
+              <QuickActionBar
+                onOpen={setActiveSheet}
+                uploadedImageDataUrl={uploadedImage?.dataUrl}
+              />
+              {imageProcessing ? (
+                <p role="status" className="pb-2 text-[13px] text-muted">
+                  正在处理图片，请稍候...
+                </p>
+              ) : null}
               <ChatComposer
                 value={requestText}
-                loading={loading}
+                loading={loading || imageProcessing}
                 onChange={setRequestText}
                 onSubmit={handleSubmit}
               />
@@ -405,7 +425,11 @@ export default function ImagePage() {
       </div>
 
       <BottomSheet title="上传图片" open={activeSheet === 'upload'} onClose={() => setActiveSheet(null)}>
-        <ImageUploader imageDataUrl={uploadedImageDataUrl} onChange={handleUploadedImageChange} />
+        <ImageUploader
+          image={uploadedImage}
+          onChange={handleUploadedImageChange}
+          onProcessingChange={setImageProcessing}
+        />
       </BottomSheet>
 
       <BottomSheet title="发布渠道" open={activeSheet === 'channel'} onClose={() => setActiveSheet(null)}>

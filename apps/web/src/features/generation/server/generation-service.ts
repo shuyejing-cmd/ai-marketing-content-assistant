@@ -2,6 +2,7 @@ import type { GenerationResult, GenerationTask, GenerationTaskRequest } from '..
 import { summarizeImageDataUrl } from '../image-summary';
 import { buildPromptPackage, type PromptMode } from '../prompt-builder';
 import { createMockGenerationTask } from '../mock-generation';
+import { validateGenerationImageDataUrl } from '../../image-upload/server/validate-generation-image';
 import { makeId } from './ids';
 import { APIMartImageProvider } from './apimart-provider';
 import { VolcengineSeedreamProvider, type SeedreamGenerateInput, type SeedreamGenerateOutput } from './seedream-provider';
@@ -139,20 +140,41 @@ export function createGenerationService(options: CreateServiceOptions = {}) {
       });
 
       let uploadedImageAsset: ImageAssetRecord | null = null;
+      let inputImageSummary:
+        | {
+            mimeType: string;
+            bytes: number;
+            width: number;
+            height: number;
+            hash: string;
+          }
+        | undefined;
       if (input.request.uploadedImageDataUrl) {
-        uploadedImageAsset = toImageAsset(input.ownerId, 'uploaded_image', input.request.uploadedImageDataUrl);
+        const validated = await validateGenerationImageDataUrl(input.request.uploadedImageDataUrl);
+        const dataUrlSummary = summarizeImageDataUrl(input.request.uploadedImageDataUrl);
+        inputImageSummary = {
+          mimeType: validated.mimeType,
+          bytes: validated.buffer.byteLength,
+          width: validated.width,
+          height: validated.height,
+          hash: dataUrlSummary.hash,
+        };
+        uploadedImageAsset = {
+          id: makeId('asset'),
+          ownerId: input.ownerId,
+          kind: 'uploaded_image',
+          mimeType: validated.mimeType,
+          base64: validated.buffer.toString('base64'),
+        };
         await store.saveImageAsset(uploadedImageAsset);
         logger.step('generation.uploaded_image.saved', {
-          image: summarizeImageDataUrl(input.request.uploadedImageDataUrl),
+          image: inputImageSummary,
         });
       }
       let inputImageUrl: string | undefined;
       let inputImageSource: InputImageSourceLog | null = null;
 
       try {
-        const inputImageSummary = input.request.uploadedImageDataUrl
-          ? summarizeImageDataUrl(input.request.uploadedImageDataUrl)
-          : undefined;
         const inputImagePublication = uploadedImageAsset
           ? await publishInputImage({
               asset: uploadedImageAsset,
@@ -173,9 +195,6 @@ export function createGenerationService(options: CreateServiceOptions = {}) {
           inputImageUrl: inputImageSource?.provider === 'tencent-cos' ? null : inputImageUrl,
           inputImageSource,
           inputImage: inputImageSummary,
-          inputImageMimeType: inputImageSummary?.mimeType,
-          inputImageBytes: inputImageSummary?.estimatedBytes,
-          inputImageHash: inputImageSummary?.hash,
         });
         const providerResult = await provider.generate({
           prompt: promptPackage.imagePrompt,
@@ -216,7 +235,7 @@ export function createGenerationService(options: CreateServiceOptions = {}) {
         }
 
         if (providerResult.imageDataUrl) {
-          await store.saveImageAsset(toImageAsset(input.ownerId, 'generated_image', providerResult.imageDataUrl));
+          await store.saveImageAsset(toGeneratedImageAsset(input.ownerId, providerResult.imageDataUrl));
           logger.step('generation.generated_image.saved', {
             image: summarizeImageDataUrl(providerResult.imageDataUrl),
           });
@@ -477,12 +496,12 @@ function applyCopyResult(result: GenerationResult, copy: StructuredMarketingCopy
   };
 }
 
-function toImageAsset(ownerId: string, kind: ImageAssetRecord['kind'], dataUrl: string): ImageAssetRecord {
+function toGeneratedImageAsset(ownerId: string, dataUrl: string): ImageAssetRecord {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   return {
     id: makeId('asset'),
     ownerId,
-    kind,
+    kind: 'generated_image',
     mimeType: match?.[1] ?? 'image/png',
     base64: match?.[2] ?? dataUrl,
   };

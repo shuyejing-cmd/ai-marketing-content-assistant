@@ -1,5 +1,6 @@
 import { createGenerationService } from '../src/features/generation/server/generation-service';
 import type { GenerationTaskRequest } from '../src/features/generation/generation-types';
+import { tinyJpegDataUrl, tinyPngDataUrl } from './test-image-fixtures';
 
 const request: GenerationTaskRequest = {
   requestText: '给新品奶茶做一张朋友圈宣传图',
@@ -210,27 +211,41 @@ describe('generation service', () => {
     await service.createTask({
       ownerId: 'owner_1',
       sessionId: 'session_1',
-      request: { ...request, uploadedImageDataUrl: 'data:image/png;base64,input' },
+      request: { ...request, uploadedImageDataUrl: tinyPngDataUrl },
     });
 
     expect(provider.generate).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'image-to-image',
-        inputImageDataUrl: 'data:image/png;base64,input',
+        inputImageDataUrl: tinyPngDataUrl,
       }),
     );
     expect(store.imageAssets).toHaveLength(2);
-    expect(logger.steps.find((step) => step.name === 'generation.provider.request')?.meta).toEqual(
+    const providerRequestMeta = logger.steps.find(
+      (step) => step.name === 'generation.provider.request',
+    )?.meta;
+    expect(providerRequestMeta).toEqual(
       expect.objectContaining({
         hasInputImage: true,
         size: '1024x1280',
         responseFormat: 'b64_json',
-        inputImage: expect.objectContaining({
+        inputImage: {
           mimeType: 'image/png',
+          bytes: Buffer.from(tinyPngDataUrl.split(',')[1], 'base64').byteLength,
+          width: 1,
+          height: 1,
           hash: expect.stringMatching(/^img_[a-f0-9]{8}$/),
-        }),
+        },
       }),
     );
+    expect(Object.keys(providerRequestMeta?.inputImage as object).sort()).toEqual(
+      ['bytes', 'hash', 'height', 'mimeType', 'width'],
+    );
+
+    const serializedSteps = JSON.stringify(logger.steps);
+    expect(serializedSteps).not.toContain('data:image/');
+    expect(serializedSteps).not.toContain(tinyPngDataUrl.split(',')[1]);
+    expect(serializedSteps).not.toContain('GPS');
   });
 
   it('uses Seedream by default when Ark credentials are configured', async () => {
@@ -323,14 +338,14 @@ describe('generation service', () => {
     await service.createTask({
       ownerId: 'owner_1',
       sessionId: 'session_1',
-      request: { ...request, uploadedImageDataUrl: 'data:image/png;base64,input' },
+      request: { ...request, uploadedImageDataUrl: tinyPngDataUrl },
     });
 
     const uploadedAsset = store.imageAssets[0] as { id: string };
     expect(provider.generate).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'image-to-image',
-        inputImageDataUrl: 'data:image/png;base64,input',
+        inputImageDataUrl: tinyPngDataUrl,
         inputImageUrl: `https://app.example.test/api/image-assets/${uploadedAsset.id}`,
       }),
     );
@@ -368,7 +383,7 @@ describe('generation service', () => {
     await service.createTask({
       ownerId: 'owner_1',
       sessionId: 'session_1',
-      request: { ...request, uploadedImageDataUrl: 'data:image/jpeg;base64,input' },
+      request: { ...request, uploadedImageDataUrl: tinyJpegDataUrl },
     });
 
     const uploadedAsset = store.imageAssets[0] as { id: string };
@@ -420,9 +435,58 @@ describe('generation service', () => {
       service.createTask({
         ownerId: 'owner_1',
         sessionId: 'session_1',
-        request: { ...request, uploadedImageDataUrl: 'data:image/png;base64,input' },
+        request: { ...request, uploadedImageDataUrl: tinyPngDataUrl },
       }),
     ).rejects.toThrow('需要配置腾讯云 COS 或 APP_PUBLIC_BASE_URL');
+    expect(provider.generate).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid uploaded image before persistence, publication, or generation', async () => {
+    vi.stubEnv('GENERATION_PROVIDER', 'apimart');
+    const provider = {
+      generate: vi.fn(async () => ({
+        imageUrl: 'https://example.test/poster.png',
+        rawResponse: { provider: 'custom' },
+      })),
+    };
+    const imagePublisher = {
+      publish: vi.fn(async () => ({
+        url: 'https://example.test/input.png',
+        log: {
+          provider: 'tencent-cos' as const,
+          bucket: 'test-bucket',
+          region: 'ap-guangzhou',
+          objectKey: 'input.png',
+          expiresInSeconds: 1800,
+          expiresAt: '2026-06-10T00:30:00.000Z',
+        },
+      })),
+    };
+    const store = createMemoryStore();
+    const saveImageAsset = vi.spyOn(store, 'saveImageAsset');
+    const service = createGenerationService({
+      provider,
+      imagePublisher,
+      store,
+      logger: createTestLogger(),
+    });
+
+    await expect(
+      service.createTask({
+        ownerId: 'owner_1',
+        sessionId: 'session_1',
+        request: {
+          ...request,
+          uploadedImageDataUrl: 'data:image/png;base64,aW52YWxpZA==',
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'IMAGE_INVALID',
+      status: 400,
+    });
+
+    expect(saveImageAsset).not.toHaveBeenCalled();
+    expect(imagePublisher.publish).not.toHaveBeenCalled();
     expect(provider.generate).not.toHaveBeenCalled();
   });
 

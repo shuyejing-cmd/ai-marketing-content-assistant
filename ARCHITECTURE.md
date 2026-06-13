@@ -90,14 +90,51 @@ AuthSession
 - 匿名 owner：`owner_*`
 - 登录 owner：`user:<userId>`
 
+## 图片上传预处理与生成数据流
+
+自由生图和模板生图共用同一套上传处理，最终数据流为：
+
+```text
+用户选择 JPEG / PNG / WebP / HEIC / HEIF
+  -> 浏览器读取文件签名、MIME、字节和尺寸
+  -> 普通 JPEG / PNG / WebP
+       -> <=10 MiB 且最长边 <=4096px：保留原文件
+       -> 超限：浏览器等比缩放和压缩
+       -> 处理后仍超限：返回明确错误，不进入生成链路
+  -> HEIC / HEIF
+       -> 浏览器优先无感转换为 JPEG，再执行 10 MiB / 4096px 规则
+       -> 浏览器无法转换：POST 服务端 HEIC 流式兜底
+            -> 源文件 <=40 MiB
+            -> admission active=1、waiting=4
+            -> 请求 deadline
+            -> 输出满足限制的 JPEG
+  -> POST generation task
+  -> generation service 强校验最终 MIME、签名、字节、尺寸和像素
+  -> 只把处理后的最终图持久化为 ImageAsset
+  -> 腾讯 COS 私有对象
+  -> 短期签名 URL
+  -> APIMartImageProvider
+  -> 保存生成结果和安全摘要日志
+```
+
+浏览器预处理不能代替服务端边界。generation service 的最终强校验位于持久化和 COS 上传之前，直接构造请求、绕过 UI 或伪造 Data URL 都不能绕过。
+
+HEIC 服务端兜底使用有界 admission 和 deadline。同步 WASM 解码不能被硬抢占，Sharp/libvips 原生工作也不会通过竞速提前返回；即使请求 deadline 已到，底层回调或原生操作未结束前仍持有资源和 admission slot，结束后再释放。这是用较低吞吐换取资源生命周期正确性的安全取舍。
+
+原始 HEIC/HEIF 只存在于当次转换请求中，普通图片超限处理也不保留处理前副本。Prisma、COS 和 provider 只接收最终 JPEG、PNG 或 WebP。日志仅记录 MIME、字节、尺寸、处理方式、provider 等安全摘要，不记录完整 base64、原始文件或完整签名 URL。
+
+图片预处理与强校验只收紧输入边界，不改变现有 APIMart、COS、任务持久化和结果展示业务链路。
+
 ## 自由图片生成
 
 ```text
 用户输入、快捷选项、可选上传图
+  -> 浏览器图片预处理；HEIC 必要时服务端兜底
   -> POST /api/generation-tasks
   -> 服务端解析 owner
   -> prompt-builder 生成 imagePrompt/copyPrompt
-  -> 上传图保存为 ImageAsset
+  -> generation service 强校验
+  -> 处理后的最终图保存为 ImageAsset
   -> APIMart 图生图：ImageAsset -> COS -> 短期签名 URL
   -> APIMartImageProvider
   -> VolcengineTextProvider
@@ -150,6 +187,7 @@ APIMartImageProvider
 错误边界：
 
 - 网络连接失败：provider fetch error。
+- COS 上传失败：发生在 `generation.provider.request` 之前，APIMart 尚未收到请求；当前 generation service 会将其记录为通用 `generation.provider.failed`。
 - 上游安全审核：APIMart `HTTP 400`，消息包含 safety rejection。
 - 图片 provider 失败：任务失败。
 - 文案 provider 失败：图片任务仍成功，使用 fallback 文案。
@@ -157,8 +195,9 @@ APIMartImageProvider
 ## COS 图生图中转
 
 ```text
-uploadedImageDataUrl
-  -> ImageAsset(base64)
+浏览器预处理或 HEIC 服务端兜底后的最终图
+  -> generation service 强校验
+  -> ImageAsset(base64，仅最终图)
   -> Tencent COS private object
   -> signed GET URL
   -> APIMart image_urls
@@ -167,6 +206,7 @@ uploadedImageDataUrl
 - Bucket 保持私有。
 - 签名 URL 只短期有效。
 - PromptLog 不保存完整签名 URL。
+- 不保存上传原图或原始 HEIC/HEIF。
 - 长期仍需把 `ImageAsset.base64` 迁移为对象存储 key。
 
 ## 下载

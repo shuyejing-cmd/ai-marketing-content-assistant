@@ -1,10 +1,14 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { resolve } from 'node:path';
+import { tinyJpegDataUrl } from '../tests/test-image-fixtures';
 
 const tinyPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
   'base64',
 );
 const tinyPngDataUrl = `data:image/png;base64,${tinyPng.toString('base64')}`;
+const tinyJpegBytes = Buffer.from(tinyJpegDataUrl.split(',')[1], 'base64').byteLength;
+const heifFixturePath = resolve('tests/fixtures/RGB_8__29x100.heif');
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.clear());
@@ -360,6 +364,137 @@ test('quick option sheets have done buttons and uploaded image status', async ({
   }
 });
 
+test('upload processing disables generation until the image is ready', async ({ page }) => {
+  await page.addInitScript(() => {
+    const originalCreateImageBitmap = window.createImageBitmap.bind(window);
+    let releaseProcessing!: () => void;
+    const processingGate = new Promise<void>((resolveGate) => {
+      releaseProcessing = resolveGate;
+    });
+    const testWindow = window as typeof window & {
+      releaseImageProcessing: () => void;
+    };
+    testWindow.releaseImageProcessing = releaseProcessing;
+    window.createImageBitmap = async (...args) => {
+      await processingGate;
+      return originalCreateImageBitmap(...args);
+    };
+  });
+  await page.goto('/image');
+  await page.getByPlaceholder('描述你想生成的营销图片...').fill('测试上传处理状态');
+  const sendButton = page.getByRole('button', { name: '发送' });
+  await expect(sendButton).toBeEnabled();
+
+  await page.getByRole('button', { name: /上传图片/ }).click();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'large-product.png',
+    mimeType: 'image/png',
+    buffer: tinyPng,
+  });
+
+  await expect(page.getByText('正在处理图片', { exact: true })).toBeVisible();
+  await expect(sendButton).toBeDisabled();
+  await page.evaluate(() => {
+    (window as typeof window & { releaseImageProcessing: () => void }).releaseImageProcessing();
+  });
+  await expect(page.getByText('上传成功')).toBeVisible();
+});
+
+test('HEIF server fallback completes upload and mock generation', async ({ page }) => {
+  await forceHeicClientConversionFailure(page);
+  await page.route('**/api/image-processing/convert', async (route) => {
+    expect(route.request().method()).toBe('POST');
+    expect((await route.request().postDataBuffer())?.byteLength).toBeGreaterThan(0);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        image: {
+          dataUrl: tinyJpegDataUrl,
+          mimeType: 'image/jpeg',
+          bytes: tinyJpegBytes,
+          width: 1,
+          height: 1,
+          processing: 'server-heic-converted',
+        },
+      }),
+    });
+  });
+
+  await page.goto('/image');
+  await page.getByRole('button', { name: /上传图片/ }).click();
+  await page.locator('input[type="file"]').setInputFiles(heifFixturePath);
+  await expect(page.getByText('上传成功')).toBeVisible();
+  await expect(page.getByAltText('已上传图片预览')).toHaveAttribute(
+    'src',
+    /^data:image\/jpeg;base64,/,
+  );
+  await page.getByRole('button', { name: '完成' }).click();
+
+  await page
+    .getByPlaceholder('描述你想生成的营销图片...')
+    .fill('用 HEIF 商品图生成一张朋友圈宣传图');
+  await page.getByRole('button', { name: '发送' }).click();
+  await expect(page.getByRole('button', { name: /复制文案/ }).first()).toBeVisible();
+});
+
+test('a failed HEIF conversion recovers after selecting a new image', async ({ page }) => {
+  await forceHeicClientConversionFailure(page);
+  await page.route('**/api/image-processing/convert', async (route) => {
+    await route.fulfill({
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'IMAGE_PROCESSING_FAILED' }),
+    });
+  });
+
+  await page.goto('/image');
+  await page.getByRole('button', { name: /上传图片/ }).click();
+  const fileInput = page.locator('input[type="file"]');
+  await fileInput.setInputFiles(heifFixturePath);
+  await expect(page.getByText('图片处理失败，请重新选择一张图片')).toBeVisible();
+
+  await fileInput.setInputFiles({
+    name: 'recovery.png',
+    mimeType: 'image/png',
+    buffer: tinyPng,
+  });
+  await expect(page.getByText('上传成功')).toBeVisible();
+  await expect(page.getByText('图片处理失败，请重新选择一张图片')).toBeHidden();
+});
+
+test('iPhone 13 upload controls do not overlap and preview uses contain', async ({ page }) => {
+  await page.goto('/image');
+  expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({
+    width: 390,
+    height: 664,
+  });
+
+  await page.getByRole('button', { name: /上传图片/ }).click();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'portrait-product.png',
+    mimeType: 'image/png',
+    buffer: tinyPng,
+  });
+  await expect(page.getByText('上传成功')).toBeVisible();
+
+  const preview = page.getByAltText('已上传图片预览');
+  await expect(preview).toHaveCSS('object-fit', 'contain');
+  const statusBox = await page.getByText('上传成功').boundingBox();
+  const previewBox = await preview.boundingBox();
+  const removeBox = await page.getByRole('button', { name: '移除图片' }).boundingBox();
+  const doneBox = await page.getByRole('button', { name: '完成' }).boundingBox();
+
+  expect(statusBox).not.toBeNull();
+  expect(previewBox).not.toBeNull();
+  expect(removeBox).not.toBeNull();
+  expect(doneBox).not.toBeNull();
+  expect(statusBox!.y + statusBox!.height).toBeLessThanOrEqual(previewBox!.y);
+  expect(previewBox!.y + previewBox!.height).toBeLessThanOrEqual(removeBox!.y);
+  expect(removeBox!.y + removeBox!.height).toBeLessThanOrEqual(doneBox!.y);
+  expect(doneBox!.y + doneBox!.height).toBeLessThanOrEqual(664);
+});
+
 test('secondary modification can be cancelled and copy gives feedback', async ({ page }) => {
   await generateMarketingResults(page);
 
@@ -433,3 +568,13 @@ test('poster download uses a stable browser download instead of showing the erro
   expect(download.suggestedFilename()).toMatch(/\.png$/);
   await expect(page.getByText(/Failed to read|Failed to fetch/)).toBeHidden();
 });
+
+async function forceHeicClientConversionFailure(page: Page) {
+  await page.addInitScript(() => {
+    window.Worker = class FailingWorker {
+      constructor() {
+        throw new Error('HEIC client conversion unavailable in this test');
+      }
+    } as unknown as typeof Worker;
+  });
+}
