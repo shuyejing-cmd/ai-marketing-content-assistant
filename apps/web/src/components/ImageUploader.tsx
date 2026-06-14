@@ -3,6 +3,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { processUploadImage } from '@/features/image-upload/image-processing-client';
 import type { ProcessedUploadImage } from '@/features/image-upload/image-types';
+import { Button } from '@/components/ui/Button';
+import { Feedback } from '@/components/ui/Primitives';
 
 type ImageUploaderProps = {
   image?: ProcessedUploadImage;
@@ -90,47 +92,30 @@ export function ImageUploader({
   return (
     <div className="grid gap-3">
       {status === 'processing' ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="rounded-lg border border-line bg-canvas p-2 text-[13px] font-medium text-muted"
-        >
-          正在处理图片
-        </div>
+        <Feedback tone="info">正在处理图片</Feedback>
       ) : null}
 
       {status === 'error' && error ? (
-        <div
-          role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 p-2 text-[13px] font-medium text-red-700"
-        >
-          {error}
-        </div>
+        <Feedback tone="error">{error}</Feedback>
       ) : null}
 
       {status === 'ready' && previewDataUrl ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="rounded-lg border border-accent bg-white p-2 text-[13px] font-medium text-accent"
-        >
-          上传成功
-        </div>
+        <Feedback tone="success">上传成功</Feedback>
       ) : null}
 
       {previewDataUrl ? (
         <img
           src={previewDataUrl}
           alt="已上传图片预览"
-          className="aspect-[4/3] w-full rounded-lg bg-canvas object-contain"
+          className="max-h-[220px] w-full rounded-lg bg-canvas object-contain sm:max-h-[360px]"
         />
       ) : (
-        <div className="grid aspect-[4/3] place-items-center rounded-lg border border-dashed border-line bg-canvas px-4 text-center text-sm leading-6 text-muted">
+        <div className="grid aspect-[4/3] place-items-center rounded-lg border border-dashed border-line bg-surface-soft px-4 text-center text-sm leading-6 text-muted">
           商品图可选，上传后会优先保持商品一致性
         </div>
       )}
 
-      <label className="grid gap-1 text-sm text-muted">
+      <label className="grid gap-2 text-sm font-medium text-ink">
         <span>选择商品图片</span>
         <input
           type="file"
@@ -145,14 +130,13 @@ export function ImageUploader({
       </label>
 
       {previewDataUrl ? (
-        <button
-          type="button"
+        <Button
           disabled={processing}
           onClick={removeImage}
-          className="rounded-lg border border-line py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+          variant="secondary"
         >
           移除图片
-        </button>
+        </Button>
       ) : null}
     </div>
   );

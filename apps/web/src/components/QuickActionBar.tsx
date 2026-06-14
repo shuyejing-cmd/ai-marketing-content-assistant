@@ -29,7 +29,7 @@ export function QuickActionBar({ onOpen, uploadedImageDataUrl }: QuickActionBarP
             key={action.key}
             type="button"
             onClick={() => onOpen(action.key)}
-            className="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-[13px] text-ink"
+            className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-line bg-white px-3 text-[13px] text-ink shadow-soft transition hover:border-accent/30 hover:text-accent"
           >
             {hasUploadedImage ? (
               <img

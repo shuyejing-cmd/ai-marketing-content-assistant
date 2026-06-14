@@ -1,5 +1,36 @@
 # CURRENT_STATUS.md
 
+## 2026-06-13 Soft Depth 前端改造
+
+全前端改造已在本地独立分支 `ui-soft-depth` 实现，业务 API、数据库 schema、账号归属、图片处理和真实生图链路未改变。
+
+已完成：
+
+- 建立蓝色 `#0476D0` 品牌体系、暖灰画布、表面、文字、边框、语义色、阴影、圆角、焦点和 reduced-motion 令牌。
+- 新增统一 `Button`、`IconButton`、`SelectChip`、`SegmentedTabs`、`BottomSheet`、`Field`、`TextArea`、`Feedback`、`SurfaceCard`、`ConfigSummary`。
+- 首页三项入口同权；新增 `/copy`、`/video` “即将开放”页面。
+- 自由生图改为响应式工作台，桌面三栏、平板双栏、手机单列并使用 Bottom Sheet。
+- 模板生图改为输入配置与结果双栏，手机端单列，上传图继续使用 `object-contain`。
+- 登录注册、主页菜单和模板管理统一为 Soft Depth 视觉与语义状态。
+- 修复模板页面初始化与用户上传并发时可能清空图片的竞态。
+- 手机上传预览限制为最大 220px，较宽屏恢复 360px，保证短屏操作按钮不被底栏遮挡。
+
+当前验证：
+
+- Vitest：43 个测试文件、379 条测试全部通过。
+- Next.js 生产构建通过，共生成 20 个页面和 API 路由入口。
+- `git diff --check` 无空白错误；`.env` 与 `.env.local` 继续被 Git 忽略。
+- Playwright mobile mock E2E：18/18 全部通过。
+- 2026-06-14 用户在本地浏览器完成视觉检查，确认界面显示与关键布局正常。
+- 最终代码审查已修复 Bottom Sheet 输入焦点重置、主页菜单焦点逃逸、分段控件键盘导航、普通图标按钮错误的 toggle 语义、活动信息重复 ID、手机端生成输入区不可及时到达、危险操作视觉层级及复制反馈定时器竞态。
+- 审查修复后 20 条聚焦 UI 回归测试、完整 379 条 Vitest 和生产构建通过；完整 Playwright 复跑受当前沙箱浏览器子进程 `spawn EPERM` 限制，未产生用例失败结果。
+
+Git 状态：
+
+- 当前 UI 分支尚未提交、尚未推送。
+- 本地基线 `abd9709` 是 PR #3 的普通 merge commit。
+- GitHub `main`、PR #3 和远端 UI 分支状态必须在网络恢复后重新确认。
+
 ## 当前状态摘要
 
 图片营销 MVP、账号系统和真实模型链路修复已经在本地分支 `account-owner-migration` 完成并提交。图片上传稳定性功能已在本地 `image-upload-stability` 分支实现，尚未合入 `main` 或 GitHub 主线。

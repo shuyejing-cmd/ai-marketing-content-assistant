@@ -1,10 +1,12 @@
 'use client';
 
 import { Copy, Download, RotateCcw, Wand2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { GenerationResult } from '@/features/generation/generation-types';
 import { downloadResultAsPng } from '@/lib/download';
 import { PosterPreview } from './PosterPreview';
+import { Button } from '@/components/ui/Button';
+import { Feedback } from '@/components/ui/Primitives';
 
 type CopyState = 'idle' | 'copied' | 'failed';
 type DownloadState = 'idle' | 'downloading' | 'failed';
@@ -20,11 +22,27 @@ type ResultCardProps = {
 export function ResultCard({ result, onRegenerate, onModify, modifyDisabled, modifyLabel }: ResultCardProps) {
   const [copyState, setCopyState] = useState<CopyState>('idle');
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
+  const copyResetTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+    },
+    [],
+  );
 
   async function handleCopy() {
     const copied = await copyText(result.publishingCopy);
     setCopyState(copied ? 'copied' : 'failed');
-    window.setTimeout(() => setCopyState('idle'), 1600);
+    if (copyResetTimerRef.current !== null) {
+      window.clearTimeout(copyResetTimerRef.current);
+    }
+    copyResetTimerRef.current = window.setTimeout(() => {
+      setCopyState('idle');
+      copyResetTimerRef.current = null;
+    }, 1600);
   }
 
   async function handleDownload() {
@@ -38,7 +56,7 @@ export function ResultCard({ result, onRegenerate, onModify, modifyDisabled, mod
   }
 
   return (
-    <article className="rounded-lg border border-line bg-surface p-3 shadow-soft">
+    <article className="rounded-lg border border-line bg-white p-3 shadow-soft sm:p-4">
       <PosterPreview result={result} />
 
       <div className="mt-3">
@@ -49,47 +67,46 @@ export function ResultCard({ result, onRegenerate, onModify, modifyDisabled, mod
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <button
-          type="button"
+        <Button
           onClick={handleCopy}
-          className="flex h-10 items-center justify-center gap-1 rounded-lg border border-line text-[13px] text-ink"
+          size="sm"
+          variant="secondary"
         >
           <Copy size={15} aria-hidden="true" />
           {copyState === 'copied' ? '已复制' : '复制文案'}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           onClick={handleDownload}
           disabled={downloadState === 'downloading'}
-          className="flex h-10 items-center justify-center gap-1 rounded-lg border border-line text-[13px] text-ink disabled:text-muted"
+          size="sm"
+          variant="secondary"
         >
           <Download size={15} aria-hidden="true" />
           {downloadState === 'downloading' ? '正在下载' : '下载图片'}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           onClick={onRegenerate}
-          className="flex h-10 items-center justify-center gap-1 rounded-lg border border-line text-[13px] text-ink"
+          size="sm"
+          variant="secondary"
         >
           <RotateCcw size={15} aria-hidden="true" />
           重新生成
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           onClick={() => onModify?.(result.id)}
           disabled={modifyDisabled || !onModify}
-          className="flex h-10 items-center justify-center gap-1 rounded-lg bg-accent text-[13px] text-white disabled:bg-line disabled:text-muted"
+          size="sm"
         >
           <Wand2 size={15} aria-hidden="true" />
           {modifyLabel ?? '二次修改'}
-        </button>
+        </Button>
       </div>
 
       {copyState === 'failed' ? (
-        <p className="mt-2 text-[12px] leading-5 text-warm">复制失败，请长按文案手动复制</p>
+        <Feedback className="mt-2" tone="error">复制失败，请长按文案手动复制</Feedback>
       ) : null}
       {downloadState === 'failed' ? (
-        <p className="mt-2 text-[12px] leading-5 text-warm">下载失败，请稍后重试</p>
+        <Feedback className="mt-2" tone="error">下载失败，请稍后重试</Feedback>
       ) : null}
     </article>
   );

@@ -1,4 +1,4 @@
-import { FileText, Image, Video } from 'lucide-react';
+import { FileText, Image, Sparkles, Video } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { EntranceCard } from '@/components/EntranceCard';
 import { HomeMenuDrawer } from '@/components/HomeMenuDrawer';
@@ -7,22 +7,30 @@ import { TemplateGallery } from '@/components/TemplateGallery';
 export default function HomePage() {
   return (
     <AppShell>
-      <section className="pt-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-accent">AI 营销内容助手</p>
-            <h1 className="mt-3 text-[28px] font-semibold leading-9 text-ink">
-              今天想做什么营销内容？
-            </h1>
+      <header className="flex min-h-14 items-center justify-between border-b border-line/80">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-b from-[#1186df] to-accent text-white shadow-control">
+            <Sparkles size={20} aria-hidden="true" />
+          </span>
+          <div>
+            <p className="text-[15px] font-semibold text-ink">AI 营销内容助手</p>
+            <p className="text-xs text-muted">让创意更快落地</p>
           </div>
-          <HomeMenuDrawer />
         </div>
-        <p className="mt-3 text-[15px] leading-6 text-muted">
-          先选内容类型，再用一句话和几个快捷选项生成能直接发布的营销内容。
+        <HomeMenuDrawer />
+      </header>
+
+      <section className="py-8 sm:py-10 lg:py-12">
+        <p className="text-sm font-semibold text-accent">开始创作</p>
+        <h1 className="mt-3 max-w-3xl text-[30px] font-semibold leading-tight text-ink sm:text-[38px]">
+          今天想做什么营销内容？
+        </h1>
+        <p className="mt-3 max-w-2xl text-[15px] leading-7 text-muted sm:text-base">
+          选择内容类型，输入产品与活动信息，快速生成可直接发布的营销素材。
         </p>
       </section>
 
-      <section className="mt-7 grid gap-3">
+      <section aria-label="营销内容类型" className="grid gap-4 md:grid-cols-3">
         <EntranceCard
           href="/copy"
           title="文案"

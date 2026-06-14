@@ -1,5 +1,30 @@
 # ARCHITECTURE.md
 
+## 前端展示层
+
+Soft Depth 改造只调整展示层和交互组合，不改变服务端契约：
+
+```text
+页面
+  -> components/ui 基础组件
+  -> 业务组件
+  -> features/* 客户端
+  -> 现有 Next.js API Routes
+```
+
+`apps/web/src/components/ui/` 提供统一按钮、图标按钮、受控选择、分段标签、Bottom Sheet、字段、反馈和表面组件。页面不再各自复制主按钮、错误提示和选中状态 class。
+
+响应式布局：
+
+- 首页：三项同权入口和响应式模板网格。
+- `/image`：XL 三栏，LG 双栏，手机单列；上传、渠道、场景、风格、活动信息和会话列表进入 Bottom Sheet。
+- `/templates/image/[id]`：桌面双栏、手机单列。
+- `/admin/templates`：桌面左侧表单、右侧列表，手机顺序堆叠。
+
+移动上传仍复用同一个 `ImageUploader` 和现有图片处理协议。预览使用 `object-contain`，手机最大高度 220px，避免短屏中移除按钮被固定底栏遮挡。
+
+Bottom Sheet 负责遮罩、Escape、焦点循环、焦点恢复、滚动锁定、固定底栏和安全区。受控 Tab 和 Chip 使用标准 ARIA 状态。
+
 ## 当前运行架构
 
 当前是 `apps/web` 单体 Next.js 应用：

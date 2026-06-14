@@ -1,5 +1,12 @@
 # NEXT_TASKS.md
 
+## P0 完成 Soft Depth UI 分支
+
+1. 提交 `ui-soft-depth`，联网确认 PR #3 与 `main` 后再推送并创建独立 UI PR。
+2. PR 合并验证前不删除任何现有工作树、分支或安全 stash。
+
+已完成验证：43 个 Vitest 文件、379 条测试通过；Next.js 生产构建通过；18 条 mock E2E 在最终审查修复前通过；审查修复后的 20 条聚焦 UI 回归测试通过；`git diff --check` 和本地敏感信息检查通过；2026-06-14 用户已确认本地视觉检查正常。当前沙箱因浏览器子进程 `spawn EPERM` 未能再次启动完整 E2E。
+
 ## P0 GitHub 两级整合
 
 目标：把本地已完成成果安全同步到 GitHub，并建立可审查、可回退的主线历史。
