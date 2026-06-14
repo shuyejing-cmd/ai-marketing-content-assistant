@@ -1,10 +1,12 @@
 'use client';
 
 import type { CampaignInfo } from '@/features/generation/generation-types';
+import { Field } from '@/components/ui/Primitives';
 
 type ActivityInfoFormProps = {
   value: CampaignInfo;
   onChange: (value: CampaignInfo) => void;
+  idPrefix?: string;
 };
 
 const fields: Array<{ key: keyof CampaignInfo; label: string; placeholder: string }> = [
@@ -17,19 +19,24 @@ const fields: Array<{ key: keyof CampaignInfo; label: string; placeholder: strin
   { key: 'extraSellingPoints', label: '补充卖点', placeholder: '第二杯半价、现做现喝' },
 ];
 
-export function ActivityInfoForm({ value, onChange }: ActivityInfoFormProps) {
+export function ActivityInfoForm({
+  idPrefix = 'campaign',
+  value,
+  onChange,
+}: ActivityInfoFormProps) {
   return (
     <div className="grid gap-3">
       {fields.map((field) => (
-        <label key={field.key} className="grid gap-1.5 text-sm text-ink">
-          {field.label}
-          <input
-            value={value[field.key] ?? ''}
-            placeholder={field.placeholder}
-            onChange={(event) => onChange({ ...value, [field.key]: event.target.value })}
-            className="h-11 rounded-lg border border-line bg-white px-3 outline-none focus:border-accent"
-          />
-        </label>
+        <Field
+          id={`${idPrefix}-${field.key}`}
+          key={field.key}
+          label={field.label}
+          onChange={(event) =>
+            onChange({ ...value, [field.key]: event.target.value })
+          }
+          placeholder={field.placeholder}
+          value={value[field.key] ?? ''}
+        />
       ))}
     </div>
   );

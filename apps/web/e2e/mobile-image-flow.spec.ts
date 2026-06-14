@@ -29,7 +29,7 @@ async function registerUser(page: Page, email: string) {
   await navigateWithReloadRetry(page, '/auth');
   const submitButton = page.getByRole('button', { name: '注册并保留内容' });
   for (let attempt = 0; attempt < 3 && !(await submitButton.isVisible().catch(() => false)); attempt += 1) {
-    await page.getByRole('button', { name: /^注册$/ }).click();
+    await page.getByRole('tab', { name: /^注册$/ }).click();
     await page.waitForTimeout(100);
   }
   await expect(submitButton).toBeVisible();
@@ -96,19 +96,20 @@ test('published image template opens a locked upload-only template flow', async 
   await expect(page).toHaveURL(`/templates/image/${template.id}`);
   await expect(page.getByPlaceholder('描述你想生成的营销图片...')).toHaveCount(0);
 
-  await page.getByRole('button', { name: /上传图片/ }).click();
-  await page.locator('input[type="file"]').setInputFiles({
-    name: 'product.png',
-    mimeType: 'image/png',
-    buffer: tinyPng,
-  });
-  await page.getByRole('button', { name: '完成' }).click();
-  await expect(page.getByText('已上传图片')).toBeVisible();
+  await page
+    .getByRole('complementary', { name: '模板输入配置' })
+    .locator('input[type="file"]')
+    .setInputFiles({
+      name: 'product.png',
+      mimeType: 'image/png',
+      buffer: tinyPng,
+    });
+  await expect(page.getByText('上传成功')).toBeVisible();
 
   await page.getByRole('button', { name: /生成模板图片/ }).click();
   await expect(page.getByRole('button', { name: /复制文案/ }).first()).toBeVisible();
   await expect(page.getByText(`使用模板：${templateTitle}`).first()).toBeVisible();
-  await expect(page.getByText('已上传图片')).toBeHidden();
+  await expect(page.getByText('上传成功')).toBeHidden();
 });
 
 test('video templates are listed as placeholders', async ({ page, request }) => {
@@ -125,7 +126,7 @@ test('video templates are listed as placeholders', async ({ page, request }) => 
   expect(templateResponse.ok()).toBeTruthy();
 
   await page.goto('/');
-  await page.getByRole('button', { name: '视频' }).click();
+  await page.getByRole('tab', { name: '视频' }).click();
   await expect(page.locator('article').filter({ hasText: templateTitle }).first()).toBeVisible();
   await expect(page.getByText('即将开放').first()).toBeVisible();
 });
@@ -319,7 +320,10 @@ test('current session keeps generated records and clears uploaded quick state af
   await page.goto('/image');
 
   await page.getByRole('button', { name: /上传图片/ }).click();
-  await page.locator('input[type="file"]').setInputFiles({
+  await page
+    .getByRole('dialog', { name: '上传图片' })
+    .locator('input[type="file"]')
+    .setInputFiles({
     name: 'product.png',
     mimeType: 'image/png',
     buffer: tinyPng,
@@ -347,12 +351,13 @@ test('quick option sheets have done buttons and uploaded image status', async ({
 
   await page.getByRole('button', { name: /上传图片/ }).click();
   await expect(page.getByRole('button', { name: '完成' })).toBeVisible();
-  await page.locator('input[type="file"]').setInputFiles({
+  const uploadSheet = page.getByRole('dialog', { name: '上传图片' });
+  await uploadSheet.locator('input[type="file"]').setInputFiles({
     name: 'product.png',
     mimeType: 'image/png',
     buffer: tinyPng,
   });
-  await expect(page.getByText('上传成功')).toBeVisible();
+  await expect(uploadSheet.getByText('上传成功')).toBeVisible();
   await page.getByRole('button', { name: '完成' }).click();
   await expect(page.getByText('已上传商品图')).toBeVisible();
   await expect(page.getByAltText('已上传商品图缩略图')).toBeVisible();
@@ -386,7 +391,10 @@ test('upload processing disables generation until the image is ready', async ({ 
   await expect(sendButton).toBeEnabled();
 
   await page.getByRole('button', { name: /上传图片/ }).click();
-  await page.locator('input[type="file"]').setInputFiles({
+  await page
+    .getByRole('dialog', { name: '上传图片' })
+    .locator('input[type="file"]')
+    .setInputFiles({
     name: 'large-product.png',
     mimeType: 'image/png',
     buffer: tinyPng,
@@ -397,7 +405,9 @@ test('upload processing disables generation until the image is ready', async ({ 
   await page.evaluate(() => {
     (window as typeof window & { releaseImageProcessing: () => void }).releaseImageProcessing();
   });
-  await expect(page.getByText('上传成功')).toBeVisible();
+  await expect(
+    page.getByRole('dialog', { name: '上传图片' }).getByText('上传成功'),
+  ).toBeVisible();
 });
 
 test('HEIF server fallback completes upload and mock generation', async ({ page }) => {
@@ -423,9 +433,13 @@ test('HEIF server fallback completes upload and mock generation', async ({ page 
 
   await page.goto('/image');
   await page.getByRole('button', { name: /上传图片/ }).click();
-  await page.locator('input[type="file"]').setInputFiles(heifFixturePath);
-  await expect(page.getByText('上传成功')).toBeVisible();
-  await expect(page.getByAltText('已上传图片预览')).toHaveAttribute(
+  await page
+    .getByRole('dialog', { name: '上传图片' })
+    .locator('input[type="file"]')
+    .setInputFiles(heifFixturePath);
+  const uploadSheet = page.getByRole('dialog', { name: '上传图片' });
+  await expect(uploadSheet.getByText('上传成功')).toBeVisible();
+  await expect(uploadSheet.getByAltText('已上传图片预览')).toHaveAttribute(
     'src',
     /^data:image\/jpeg;base64,/,
   );
@@ -450,17 +464,22 @@ test('a failed HEIF conversion recovers after selecting a new image', async ({ p
 
   await page.goto('/image');
   await page.getByRole('button', { name: /上传图片/ }).click();
-  const fileInput = page.locator('input[type="file"]');
+  const uploadSheet = page.getByRole('dialog', { name: '上传图片' });
+  const fileInput = uploadSheet.locator('input[type="file"]');
   await fileInput.setInputFiles(heifFixturePath);
-  await expect(page.getByText('图片处理失败，请重新选择一张图片')).toBeVisible();
+  await expect(
+    uploadSheet.getByText('图片处理失败，请重新选择一张图片'),
+  ).toBeVisible();
 
   await fileInput.setInputFiles({
     name: 'recovery.png',
     mimeType: 'image/png',
     buffer: tinyPng,
   });
-  await expect(page.getByText('上传成功')).toBeVisible();
-  await expect(page.getByText('图片处理失败，请重新选择一张图片')).toBeHidden();
+  await expect(uploadSheet.getByText('上传成功')).toBeVisible();
+  await expect(
+    uploadSheet.getByText('图片处理失败，请重新选择一张图片'),
+  ).toBeHidden();
 });
 
 test('iPhone 13 upload controls do not overlap and preview uses contain', async ({ page }) => {
@@ -471,19 +490,34 @@ test('iPhone 13 upload controls do not overlap and preview uses contain', async 
   });
 
   await page.getByRole('button', { name: /上传图片/ }).click();
-  await page.locator('input[type="file"]').setInputFiles({
+  await page
+    .getByRole('dialog', { name: '上传图片' })
+    .locator('input[type="file"]')
+    .setInputFiles({
     name: 'portrait-product.png',
     mimeType: 'image/png',
     buffer: tinyPng,
   });
-  await expect(page.getByText('上传成功')).toBeVisible();
+  const uploadSheet = page.getByRole('dialog', { name: '上传图片' });
+  await expect(uploadSheet.getByText('上传成功')).toBeVisible();
+  await uploadSheet.evaluate(async (element) => {
+    await Promise.all(
+      element
+        .getAnimations({ subtree: true })
+        .map((animation) => animation.finished.catch(() => undefined)),
+    );
+  });
 
-  const preview = page.getByAltText('已上传图片预览');
+  const preview = uploadSheet.getByAltText('已上传图片预览');
   await expect(preview).toHaveCSS('object-fit', 'contain');
-  const statusBox = await page.getByText('上传成功').boundingBox();
+  const statusBox = await uploadSheet.getByText('上传成功').boundingBox();
   const previewBox = await preview.boundingBox();
-  const removeBox = await page.getByRole('button', { name: '移除图片' }).boundingBox();
-  const doneBox = await page.getByRole('button', { name: '完成' }).boundingBox();
+  const removeBox = await uploadSheet
+    .getByRole('button', { name: '移除图片' })
+    .boundingBox();
+  const doneBox = await uploadSheet
+    .getByRole('button', { name: '完成' })
+    .boundingBox();
 
   expect(statusBox).not.toBeNull();
   expect(previewBox).not.toBeNull();
@@ -521,12 +555,12 @@ test('session menu can create a new session and restore an old one', async ({ pa
   await generateMarketingResults(page);
 
   await page.getByRole('button', { name: '打开会话菜单' }).click();
-  await expect(page.getByText('历史会话记录')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '会话菜单' })).toBeVisible();
   await page.getByRole('button', { name: '新建聊天会话' }).click();
   await expect(page.getByRole('button', { name: /复制文案/ }).first()).toBeHidden();
 
   await page.getByRole('button', { name: '打开会话菜单' }).click();
-  await page.getByRole('button', { name: /给新品奶茶做/ }).click();
+  await page.getByRole('button', { name: /^打开会话给新品奶茶做/ }).click();
 
   await expect(page.getByRole('button', { name: /复制文案/ }).first()).toBeVisible();
 });
@@ -551,9 +585,9 @@ test('renaming a session preserves all generated records', async ({ page }) => {
     await dialog.accept('重命名后的会话');
   });
   await page.getByRole('button', { name: '打开会话菜单' }).click();
-  await page.getByText('重命名').first().click();
+  await page.getByRole('button', { name: /^重命名/ }).first().click();
   await expect(page.getByText('重命名后的会话').first()).toBeVisible();
-  await page.getByRole('button', { name: /重命名后的会话/ }).click();
+  await page.getByRole('button', { name: '打开会话重命名后的会话' }).click();
 
   await expect(page.getByRole('button', { name: /复制文案/ })).toHaveCount(2);
 });

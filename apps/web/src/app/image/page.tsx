@@ -1,8 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Menu } from 'lucide-react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
+import {
+  ArrowLeft,
+  Menu,
+  Pencil,
+  Plus,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { ActivityInfoForm } from '@/components/ActivityInfoForm';
 import { AppShell } from '@/components/AppShell';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -11,6 +24,13 @@ import { ImageUploader } from '@/components/ImageUploader';
 import { OptionPicker } from '@/components/OptionPicker';
 import { QuickActionBar } from '@/components/QuickActionBar';
 import { ResultCard } from '@/components/ResultCard';
+import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
+import {
+  ConfigSummary,
+  Feedback,
+  SurfaceCard,
+} from '@/components/ui/Primitives';
 import {
   channelOptions,
   sceneOptions,
@@ -48,7 +68,15 @@ import {
 import { upsertTaskIntoSession } from '@/features/generation/session-task-order';
 import type { ProcessedUploadImage } from '@/features/image-upload/image-types';
 
-type SheetKey = 'upload' | 'channel' | 'scene' | 'style' | 'info' | 'menu' | null;
+type SheetKey =
+  | 'config'
+  | 'upload'
+  | 'channel'
+  | 'scene'
+  | 'style'
+  | 'info'
+  | 'menu'
+  | null;
 
 const defaultChannels: Channel[] = ['wechat'];
 const defaultScene: MarketingScene = 'new_product';
@@ -71,6 +99,8 @@ export default function ImagePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const latestResultRef = useRef<HTMLDivElement | null>(null);
+  const configCloseRef = useRef<HTMLButtonElement>(null);
+  const configPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void initializeSessions();
@@ -81,6 +111,45 @@ export default function ImagePage() {
       latestResultRef.current?.scrollIntoView({ block: 'end' });
     }
   }, [currentSession?.tasks.length, loading]);
+
+  useEffect(() => {
+    if (activeSheet !== 'config') return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    configCloseRef.current?.focus();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setActiveSheet(null);
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, [activeSheet]);
+
+  function trapConfigFocus(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(
+      configPanelRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    );
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   async function initializeSessions() {
     try {
@@ -223,17 +292,20 @@ export default function ImagePage() {
         return;
       }
 
-      const nextTask = await createGenerationTask({
-        requestText,
-        uploadedImageDataUrl: uploadedImage?.dataUrl,
-        channels,
-        scene,
-        style,
-        campaignInfo,
-      }, {
-        ownerId: ownerId ?? undefined,
-        sessionId: currentSession?.id,
-      });
+      const nextTask = await createGenerationTask(
+        {
+          requestText,
+          uploadedImageDataUrl: uploadedImage?.dataUrl,
+          channels,
+          scene,
+          style,
+          campaignInfo,
+        },
+        {
+          ownerId: ownerId ?? undefined,
+          sessionId: currentSession?.id,
+        },
+      );
       setTask(nextTask);
       persistTask(nextTask);
       setRequestText('');
@@ -288,7 +360,9 @@ export default function ImagePage() {
     const title = window.prompt('输入新的会话名称', session.title);
     if (!title) return;
     const renamed = await renameRemoteSession(ownerId, session.id, title);
-    setSessions((previous) => previous.map((item) => (item.id === session.id ? renamed : item)));
+    setSessions((previous) =>
+      previous.map((item) => (item.id === session.id ? renamed : item)),
+    );
     if (currentSession?.id === session.id) {
       setCurrentSession(renamed);
     }
@@ -300,7 +374,8 @@ export default function ImagePage() {
     try {
       await deleteRemoteSession(ownerId, session.id);
       const remaining = sessions.filter((item) => item.id !== session.id);
-      const nextSession = remaining[0] ?? (await createRemoteSession(ownerId, { kind: 'free' }));
+      const nextSession =
+        remaining[0] ?? (await createRemoteSession(ownerId, { kind: 'free' }));
       setSessions(remaining.length > 0 ? remaining : [nextSession]);
       if (currentSession?.id === session.id || remaining.length === 0) {
         restoreSession(nextSession);
@@ -315,116 +390,286 @@ export default function ImagePage() {
     setRequestText('');
   }
 
+  const configItems = [
+    {
+      label: '发布渠道',
+      value: channels.map((channel) => getOptionLabel(channelOptions, channel)).join('、'),
+    },
+    { label: '营销场景', value: getOptionLabel(sceneOptions, scene) },
+    { label: '视觉风格', value: getOptionLabel(styleOptions, style) },
+  ];
+
   return (
     <AppShell>
-      <div className="flex min-h-dvh flex-col pb-4">
-        <header className="flex items-center gap-3 pt-1">
-          <Link href="/" className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface">
+      <div className="min-h-[calc(100dvh-2.5rem)]">
+        <header className="flex min-h-16 items-center gap-3 border-b border-line/80">
+          <Link aria-label="返回首页" className="ui-icon-button" href="/">
             <ArrowLeft size={18} aria-hidden="true" />
           </Link>
           <div className="min-w-0 flex-1">
-            <h1 className="text-[22px] font-semibold text-ink">图片营销</h1>
-            <p className="truncate text-[13px] text-muted">{currentSession?.title ?? '一句话生成图文营销包'}</p>
+            <h1 className="text-xl font-semibold text-ink">图片营销</h1>
+            <p className="truncate text-xs text-muted">
+              {currentSession?.title ?? '一句话生成图文营销包'}
+            </p>
           </div>
-          <button
-            type="button"
+          <IconButton
+            className="xl:hidden"
+            label="打开会话菜单"
             onClick={() => setActiveSheet('menu')}
-            className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface"
-            aria-label="打开会话菜单"
           >
             <Menu size={18} aria-hidden="true" />
-          </button>
+          </IconButton>
         </header>
 
-        <section className="mt-5 flex-1 space-y-3">
-          <div className="rounded-lg border border-line bg-surface p-3 text-[14px] leading-6 text-muted">
-            你可以先上传商品图，也可以直接输入需求。商品图可选，上传后默认保持商品一致性。
-          </div>
-
-          {loading ? (
-            <div className="rounded-lg border border-line bg-surface p-4 text-[15px] text-ink">
-              正在生成 3 套图片营销方案...
+        <div className="grid min-h-[calc(100dvh-7rem)] gap-4 pb-44 pt-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:pb-4 xl:grid-cols-[240px_minmax(0,1fr)_360px]">
+          <nav
+            aria-label="会话列表"
+            className="hidden min-h-0 flex-col border-r border-line pr-4 xl:flex"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-accent">创作记录</p>
+                <h2 className="mt-1 text-base font-semibold text-ink">会话列表</h2>
+              </div>
+              <IconButton label="新建聊天会话" onClick={handleCreateSession}>
+                <Plus size={18} aria-hidden="true" />
+              </IconButton>
             </div>
-          ) : null}
-
-          {error ? (
-            <div className="rounded-lg border border-warm bg-white p-3 text-[14px] text-warm">{error}</div>
-          ) : null}
-
-          {currentSession && currentSession.tasks.length > 0 ? (
-            <div className="grid gap-3">
-              {currentSession.tasks.map((historyTask, index) => (
-                <div
-                  key={historyTask.id}
-                  ref={index === currentSession.tasks.length - 1 ? latestResultRef : undefined}
-                  className="grid gap-2"
-                >
-                  <div className="ml-auto max-w-[86%] rounded-2xl rounded-br-sm bg-accent px-3 py-2 text-[14px] leading-6 text-white">
-                    {historyTask.request.requestText || '生成图片营销方案'}
-                  </div>
-                  {historyTask.results.map((result) => (
-                    <ResultCard
-                      key={result.id}
-                      result={result}
-                      onRegenerate={() => {
-                        setTask(historyTask);
-                        void handleRegenerate(historyTask);
-                      }}
-                      onModify={(resultId) => {
-                        setTask(historyTask);
-                        setModifyingResultId(resultId);
-                        setRequestText('');
-                      }}
-                    />
-                  ))}
-                </div>
+            <div className="mt-4 grid gap-2 overflow-y-auto">
+              {sessions.map((session) => (
+                <SessionRow
+                  current={currentSession?.id === session.id}
+                  key={session.id}
+                  onDelete={() => void handleDeleteSession(session)}
+                  onRename={() => void handleRenameSession(session)}
+                  onSelect={() => handleSelectSession(session)}
+                  session={session}
+                />
               ))}
-            </div>
-          ) : null}
-        </section>
-
-        <footer className="sticky bottom-0 -mx-4 bg-canvas px-4 pb-2 pt-3">
-          {modifyingResultId ? (
-            <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-accent bg-white px-3 py-2">
-              <p className="text-[13px] leading-5 text-accent">
-                正在二次修改当前方案，输入你想改的地方。
-              </p>
-              <button
-                type="button"
-                onClick={cancelModification}
-                className="shrink-0 rounded-full border border-accent px-3 py-1 text-[12px] text-accent"
-              >
-                取消二次修改
-              </button>
-            </div>
-          ) : null}
-          {ownerId && currentSession ? (
-            <>
-              <QuickActionBar
-                onOpen={setActiveSheet}
-                uploadedImageDataUrl={uploadedImage?.dataUrl}
-              />
-              {imageProcessing ? (
-                <p role="status" className="pb-2 text-[13px] text-muted">
-                  正在处理图片，请稍候...
-                </p>
+              {sessions.length === 0 ? (
+                <p className="text-sm text-muted">正在读取会话...</p>
               ) : null}
-              <ChatComposer
-                value={requestText}
-                loading={loading || imageProcessing}
-                onChange={setRequestText}
-                onSubmit={handleSubmit}
-              />
-            </>
-          ) : (
-            <div className="rounded-lg border border-line bg-surface p-3 text-[14px] text-muted">
-              正在读取会话...
             </div>
-          )}
-        </footer>
+          </nav>
+
+          <section
+            aria-label="生成结果"
+            className="min-w-0 rounded-lg border border-line/80 bg-white/55 p-3 sm:p-4"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-accent">生成画布</p>
+                <h2 className="mt-1 text-lg font-semibold text-ink">营销方案</h2>
+              </div>
+              <Button
+                className="lg:hidden"
+                onClick={() => setActiveSheet('config')}
+                size="sm"
+                variant="secondary"
+              >
+                <SlidersHorizontal size={16} aria-hidden="true" />
+                配置
+              </Button>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <Feedback tone="info">
+                可直接输入需求，也可以上传商品图以保持商品主体一致。
+              </Feedback>
+              {loading ? <Feedback tone="info">正在生成 3 套图片营销方案...</Feedback> : null}
+              {error ? <Feedback tone="error">{error}</Feedback> : null}
+
+              {currentSession && currentSession.tasks.length > 0 ? (
+                currentSession.tasks.map((historyTask, index) => (
+                  <div
+                    className="grid gap-3"
+                    key={historyTask.id}
+                    ref={
+                      index === currentSession.tasks.length - 1
+                        ? latestResultRef
+                        : undefined
+                    }
+                  >
+                    <div className="ml-auto max-w-[86%] rounded-lg rounded-br-sm bg-accent px-3 py-2 text-[14px] leading-6 text-white shadow-control">
+                      {historyTask.request.requestText || '生成图片营销方案'}
+                    </div>
+                    <div className="grid gap-3 2xl:grid-cols-2">
+                      {historyTask.results.map((result) => (
+                        <ResultCard
+                          key={result.id}
+                          onModify={(resultId) => {
+                            setTask(historyTask);
+                            setModifyingResultId(resultId);
+                            setRequestText('');
+                          }}
+                          onRegenerate={() => {
+                            setTask(historyTask);
+                            void handleRegenerate(historyTask);
+                          }}
+                          result={result}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : !loading ? (
+                <div className="grid min-h-[320px] place-items-center border-t border-line text-center">
+                  <div className="max-w-sm">
+                    <p className="text-lg font-semibold text-ink">还没有生成结果</p>
+                    <p className="mt-2 text-sm leading-6 text-muted">
+                      在右侧填写需求并发送，生成的图片与发布文案会显示在这里。
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          {activeSheet === 'config' ? (
+            <button
+              aria-label="关闭生成配置遮罩"
+              className="fixed inset-0 z-40 border-0 bg-black/35 backdrop-blur-[2px] lg:hidden"
+              onClick={() => setActiveSheet(null)}
+              tabIndex={-1}
+              type="button"
+            />
+          ) : null}
+
+          <aside
+            aria-label="生成配置"
+            className="min-w-0 lg:sticky lg:top-4 lg:self-start"
+          >
+            <div
+              ref={configPanelRef}
+              aria-label="生成配置"
+              aria-modal={activeSheet === 'config' ? 'true' : undefined}
+              className={
+                activeSheet === 'config'
+                  ? 'fixed inset-x-0 bottom-0 z-50 max-h-[92dvh] overflow-y-auto rounded-t-2xl border border-line bg-[#fbfbfa] p-4 shadow-[-10px_-18px_45px_rgba(22,31,41,0.16)] lg:static lg:max-h-none lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none'
+                  : 'hidden lg:block'
+              }
+              onKeyDown={trapConfigFocus}
+              role={activeSheet === 'config' ? 'dialog' : undefined}
+            >
+              <div className="mb-4 flex items-center justify-between lg:hidden">
+                <h2 className="text-lg font-semibold text-ink">生成配置</h2>
+                <IconButton
+                  ref={configCloseRef}
+                  label="关闭生成配置"
+                  onClick={() => setActiveSheet(null)}
+                >
+                  <X size={18} aria-hidden="true" />
+                </IconButton>
+              </div>
+
+              <SurfaceCard className="grid gap-5">
+                <section>
+                  <h2 className="text-base font-semibold text-ink">商品图片</h2>
+                  <p className="mt-1 text-xs leading-5 text-muted">
+                    10 MB 以下保持原图，超出时自动压缩；支持 HEIC/HEIF 无感转换。
+                  </p>
+                  <div className="mt-3">
+                    <ImageUploader
+                      image={uploadedImage}
+                      onChange={handleUploadedImageChange}
+                      onProcessingChange={setImageProcessing}
+                    />
+                  </div>
+                </section>
+
+                <ConfigSummary
+                  items={configItems}
+                  onEdit={() => setActiveSheet('channel')}
+                />
+
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    onClick={() => setActiveSheet('channel')}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    渠道
+                  </Button>
+                  <Button
+                    onClick={() => setActiveSheet('scene')}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    场景
+                  </Button>
+                  <Button
+                    onClick={() => setActiveSheet('style')}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    风格
+                  </Button>
+                </div>
+
+                <section>
+                  <h2 className="text-base font-semibold text-ink">活动信息</h2>
+                  <p className="mt-1 text-xs leading-5 text-muted">
+                    可选填写，帮助模型生成更完整的图片文字。
+                  </p>
+                  <div className="mt-3">
+                    <ActivityInfoForm
+                      idPrefix="desktop-campaign"
+                      value={campaignInfo}
+                      onChange={setCampaignInfo}
+                    />
+                  </div>
+                </section>
+              </SurfaceCard>
+            </div>
+
+            <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-canvas/95 px-4 pb-[max(8px,env(safe-area-inset-bottom))] pt-3 backdrop-blur lg:static lg:mx-0 lg:mt-4 lg:border-0 lg:bg-transparent lg:px-0 lg:pb-0 lg:backdrop-blur-0">
+              <div className="lg:hidden">
+                <QuickActionBar
+                  onOpen={setActiveSheet}
+                  uploadedImageDataUrl={uploadedImage?.dataUrl}
+                />
+              </div>
+              {modifyingResultId ? (
+                <div className="mb-2">
+                  <Feedback tone="info">
+                    <span className="flex flex-wrap items-center justify-between gap-2">
+                      正在二次修改当前方案。
+                      <button
+                        className="font-semibold text-accent"
+                        onClick={cancelModification}
+                        type="button"
+                      >
+                        取消二次修改
+                      </button>
+                    </span>
+                  </Feedback>
+                </div>
+              ) : null}
+              {imageProcessing ? (
+                <div className="mb-2">
+                  <Feedback tone="info">正在处理图片，请稍候...</Feedback>
+                </div>
+              ) : null}
+              {ownerId && currentSession ? (
+                <ChatComposer
+                  loading={loading || imageProcessing}
+                  onChange={setRequestText}
+                  onSubmit={handleSubmit}
+                  value={requestText}
+                />
+              ) : (
+                <Feedback tone="info">正在读取会话...</Feedback>
+              )}
+            </div>
+          </aside>
+        </div>
       </div>
 
-      <BottomSheet title="上传图片" open={activeSheet === 'upload'} onClose={() => setActiveSheet(null)}>
+      <BottomSheet
+        onClose={() => setActiveSheet(null)}
+        open={activeSheet === 'upload'}
+        title="上传图片"
+      >
         <ImageUploader
           image={uploadedImage}
           onChange={handleUploadedImageChange}
@@ -432,95 +677,129 @@ export default function ImagePage() {
         />
       </BottomSheet>
 
-      <BottomSheet title="发布渠道" open={activeSheet === 'channel'} onClose={() => setActiveSheet(null)}>
-        <OptionPicker multiple value={channels} options={channelOptions} onChange={(value) => handleChannelsChange(value as Channel[])} />
+      <BottomSheet
+        onClose={() => setActiveSheet(null)}
+        open={activeSheet === 'channel'}
+        title="发布渠道"
+      >
+        <OptionPicker
+          multiple
+          onChange={(value) => handleChannelsChange(value as Channel[])}
+          options={channelOptions}
+          value={channels}
+        />
       </BottomSheet>
 
-      <BottomSheet title="营销场景" open={activeSheet === 'scene'} onClose={() => setActiveSheet(null)}>
-        <OptionPicker value={scene} options={sceneOptions} onChange={(value) => handleSceneChange(value as MarketingScene)} />
+      <BottomSheet
+        onClose={() => setActiveSheet(null)}
+        open={activeSheet === 'scene'}
+        title="营销场景"
+      >
+        <OptionPicker
+          onChange={(value) => handleSceneChange(value as MarketingScene)}
+          options={sceneOptions}
+          value={scene}
+        />
       </BottomSheet>
 
-      <BottomSheet title="风格模板" open={activeSheet === 'style'} onClose={() => setActiveSheet(null)}>
-        <OptionPicker value={style} options={styleOptions} onChange={(value) => handleStyleChange(value as StyleTemplate)} />
+      <BottomSheet
+        onClose={() => setActiveSheet(null)}
+        open={activeSheet === 'style'}
+        title="风格模板"
+      >
+        <OptionPicker
+          onChange={(value) => handleStyleChange(value as StyleTemplate)}
+          options={styleOptions}
+          value={style}
+        />
       </BottomSheet>
 
-      <BottomSheet title="活动信息" open={activeSheet === 'info'} onClose={() => setActiveSheet(null)}>
-        <ActivityInfoForm value={campaignInfo} onChange={setCampaignInfo} />
+      <BottomSheet
+        onClose={() => setActiveSheet(null)}
+        open={activeSheet === 'info'}
+        title="活动信息"
+      >
+        <ActivityInfoForm
+          idPrefix="mobile-campaign"
+          value={campaignInfo}
+          onChange={setCampaignInfo}
+        />
       </BottomSheet>
 
-      <BottomSheet title="会话菜单" open={activeSheet === 'menu'} onClose={() => setActiveSheet(null)}>
+      <BottomSheet
+        onClose={() => setActiveSheet(null)}
+        open={activeSheet === 'menu'}
+        title="会话菜单"
+      >
         <div className="grid gap-4">
-          <button
-            type="button"
-            onClick={handleCreateSession}
-            className="h-11 rounded-lg bg-accent text-[15px] font-semibold text-white"
-          >
+          <Button fullWidth onClick={handleCreateSession}>
+            <Plus size={17} aria-hidden="true" />
             新建聊天会话
-          </button>
-
-          <section>
-            <h2 className="text-[15px] font-semibold text-ink">历史会话记录</h2>
-            <div className="mt-2 grid gap-2">
-              {sessions.length > 0 ? (
-                sessions.map((session) => (
-                  <button
-                    key={session.id}
-                    type="button"
-                    onClick={() => handleSelectSession(session)}
-                    className="rounded-lg border border-line bg-white p-3 text-left"
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="block text-[14px] font-semibold leading-5 text-ink">
-                        {session.title}
-                        {currentSession?.id === session.id ? '（当前）' : ''}
-                      </span>
-                      <span className="flex shrink-0 gap-2">
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleRenameSession(session);
-                          }}
-                          className="rounded-full border border-line px-2 py-1 text-[11px] text-muted"
-                        >
-                          重命名
-                        </span>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleDeleteSession(session);
-                          }}
-                          className="rounded-full border border-line px-2 py-1 text-[11px] text-warm"
-                        >
-                          删除
-                        </span>
-                      </span>
-                    </span>
-                    <span className="mt-1 block text-[12px] leading-5 text-muted">
-                      {getSessionSummary(session)}
-                    </span>
-                    <span className="mt-1 block text-[11px] text-muted">
-                      {formatSessionTime(session.updatedAt)}
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <p className="rounded-lg bg-canvas p-3 text-[13px] text-muted">暂无历史会话</p>
-              )}
-            </div>
-          </section>
+          </Button>
+          <div className="grid gap-2">
+            {sessions.map((session) => (
+              <SessionRow
+                current={currentSession?.id === session.id}
+                key={session.id}
+                onDelete={() => void handleDeleteSession(session)}
+                onRename={() => void handleRenameSession(session)}
+                onSelect={() => handleSelectSession(session)}
+                session={session}
+              />
+            ))}
+          </div>
         </div>
       </BottomSheet>
     </AppShell>
   );
 }
 
-function createSessionTitle(requestText: string) {
-  const normalized = requestText.trim();
-  return normalized.length > 0 ? normalized.slice(0, 18) : '新的图片会话';
+function SessionRow({
+  current,
+  onDelete,
+  onRename,
+  onSelect,
+  session,
+}: {
+  current: boolean;
+  onDelete: () => void;
+  onRename: () => void;
+  onSelect: () => void;
+  session: GenerationSession;
+}) {
+  return (
+    <div
+      className={`rounded-lg border p-2 ${
+        current ? 'border-accent bg-accent-soft' : 'border-line bg-white'
+      }`}
+    >
+      <button
+        aria-label={`打开会话${session.title}`}
+        className="min-h-11 w-full px-1 text-left"
+        onClick={onSelect}
+        type="button"
+      >
+        <span className="block text-sm font-semibold text-ink">
+          {session.title}
+          {current ? '（当前）' : ''}
+        </span>
+        <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted">
+          {getSessionSummary(session)}
+        </span>
+        <span className="mt-1 block text-[11px] text-muted">
+          {formatSessionTime(session.updatedAt)}
+        </span>
+      </button>
+      <div className="mt-1 flex justify-end gap-1 border-t border-line/70 pt-2">
+        <IconButton label={`重命名${session.title}`} onClick={onRename}>
+          <Pencil size={15} aria-hidden="true" />
+        </IconButton>
+        <IconButton label={`删除${session.title}`} onClick={onDelete} tone="danger">
+          <Trash2 size={15} aria-hidden="true" />
+        </IconButton>
+      </div>
+    </div>
+  );
 }
 
 function getSessionSummary(session: GenerationSession) {
@@ -528,7 +807,10 @@ function getSessionSummary(session: GenerationSession) {
   return activeTask?.request.requestText ?? '暂无生成内容';
 }
 
-function getOptionLabel<T extends string>(options: Array<{ value: T; label: string }>, value: T) {
+function getOptionLabel<T extends string>(
+  options: Array<{ value: T; label: string }>,
+  value: T,
+) {
   return options.find((option) => option.value === value)?.label ?? value;
 }
 

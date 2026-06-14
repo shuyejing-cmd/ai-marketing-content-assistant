@@ -1,5 +1,18 @@
 # AGENTS.md
 
+## 2026-06-13 最新开发上下文
+
+- 当前 UI 工作树：`.worktrees/ui-soft-depth`
+- 当前分支：`ui-soft-depth`
+- 本地基线：`abd9709`，它是 PR #3 的本地普通 merge commit；GitHub `main` 是否已同步仍需联网复核。
+- 当前任务：参考 `ai-marketing-ui-kit` 完成全前端 Soft Depth 改造，后端 API、Prisma、账号、上传和生成协议保持不变。
+- UI 代码主要位于 `apps/web/src/components/ui/`、`apps/web/src/app/globals.css` 和各页面展示层。
+- 已完成首页、自由生图、模板生图、登录注册、主页菜单、模板管理及 `/copy`、`/video` 占位页改造。
+- 自由生图桌面端为会话、结果、配置三栏工作台；移动端使用上传和配置 Bottom Sheet。
+- 当前最新证据：43 个 Vitest 文件、379 条测试全部通过；Next.js 生产构建通过；18 条 mock Playwright E2E 在最终审查修复前全部通过；审查修复后的 20 条聚焦 UI 回归测试通过。当前沙箱因浏览器子进程 `spawn EPERM` 未能再次启动完整 E2E；`git diff --check` 无空白错误；`.env` 与 `.env.local` 保持忽略。
+- 2026-06-14 用户已在本地浏览器完成视觉检查，确认首页、生图、登录和模板后台显示正常。
+- 不要在上述验证完成前宣称 UI 改造已经交付或推送。
+
 ## 新会话阅读顺序
 
 根目录下这 6 个文件是当前项目事实来源。新会话不要一次性读取整个代码库，先按顺序阅读：

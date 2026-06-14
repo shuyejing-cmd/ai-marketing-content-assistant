@@ -1,6 +1,7 @@
 'use client';
 
 import { Send } from 'lucide-react';
+import { IconButton } from '@/components/ui/IconButton';
 
 type ChatComposerProps = {
   value: string;
@@ -11,7 +12,7 @@ type ChatComposerProps = {
 
 export function ChatComposer({ value, loading, onChange, onSubmit }: ChatComposerProps) {
   return (
-    <div className="flex items-end gap-2 rounded-2xl border border-line bg-surface p-2 shadow-soft">
+    <div className="flex items-end gap-2 rounded-lg border border-line bg-white p-2 shadow-soft focus-within:border-accent">
       <textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -20,15 +21,14 @@ export function ChatComposer({ value, loading, onChange, onSubmit }: ChatCompose
         placeholder="描述你想生成的营销图片..."
         className="max-h-28 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-[15px] outline-none"
       />
-      <button
-        type="button"
+      <IconButton
+        label="发送"
         disabled={loading || value.trim().length === 0}
         onClick={onSubmit}
-        className="grid h-10 w-10 place-items-center rounded-full bg-accent text-white disabled:bg-line"
-        aria-label="发送"
+        className="border-accent bg-accent text-white hover:bg-accent-strong hover:text-white disabled:border-line disabled:bg-line disabled:text-muted"
       >
-        <Send size={18} />
-      </button>
+        <Send size={18} aria-hidden="true" />
+      </IconButton>
     </div>
   );
 }

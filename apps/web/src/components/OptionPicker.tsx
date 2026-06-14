@@ -1,5 +1,7 @@
 'use client';
 
+import { SelectChip } from '@/components/ui/SelectChip';
+
 type OptionPickerProps<T extends string> = {
   multiple?: boolean;
   value: T | T[];
@@ -11,14 +13,14 @@ export function OptionPicker<T extends string>({ multiple, value, options, onCha
   const selectedValues = Array.isArray(value) ? value : [value];
 
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="flex flex-wrap gap-2">
       {options.map((option) => {
         const selected = selectedValues.includes(option.value);
         return (
-          <button
+          <SelectChip
             key={option.value}
-            type="button"
-            onClick={() => {
+            selected={selected}
+            onSelectedChange={() => {
               if (!multiple) {
                 onChange(option.value);
                 return;
@@ -28,14 +30,9 @@ export function OptionPicker<T extends string>({ multiple, value, options, onCha
                 : [...selectedValues, option.value];
               onChange(next);
             }}
-            className={
-              selected
-                ? 'rounded-lg bg-accent px-3 py-3 text-sm text-white'
-                : 'rounded-lg border border-line px-3 py-3 text-sm text-ink'
-            }
           >
             {option.label}
-          </button>
+          </SelectChip>
         );
       })}
     </div>

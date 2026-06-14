@@ -55,7 +55,13 @@ vi.mock('../src/components/AppShell', () => ({
 }));
 
 vi.mock('../src/components/BottomSheet', () => ({
-  BottomSheet: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  BottomSheet: ({
+    children,
+    open,
+  }: {
+    children: React.ReactNode;
+    open: boolean;
+  }) => (open ? <div>{children}</div> : null),
 }));
 
 vi.mock('../src/components/ActivityInfoForm', () => ({
@@ -216,6 +222,15 @@ describe('image upload page integration', () => {
     assertSafeUploadLog('free');
   });
 
+  it('renders the free image workflow as a three-zone workbench', async () => {
+    render(<ImagePage />);
+
+    await screen.findByTestId('free-submit');
+    expect(screen.getByRole('navigation', { name: '会话列表' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: '生成结果' })).toBeTruthy();
+    expect(screen.getByRole('complementary', { name: '生成配置' })).toBeTruthy();
+  });
+
   it('blocks template generation while processing and clears a successful upload after generation', async () => {
     render(<TemplateImageClient templateId="template-1" />);
 
@@ -241,6 +256,16 @@ describe('image upload page integration', () => {
     });
 
     assertSafeUploadLog('template');
+  });
+
+  it('renders template generation as input and result workspaces', async () => {
+    render(<TemplateImageClient templateId="template-1" />);
+
+    await screen.findByRole('button', { name: '生成模板图片' });
+    expect(
+      screen.getByRole('complementary', { name: '模板输入配置' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('region', { name: '模板生成结果' })).toBeTruthy();
   });
 });
 
